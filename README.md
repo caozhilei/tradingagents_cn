@@ -72,15 +72,27 @@
 
 #### 📥 安装部署
 
-**三种部署方式，任选其一**：
+**四种部署方式，任选其一**：
 
 | 部署方式 | 适用场景 | 难度 | 文档链接 |
 |---------|---------|------|---------|
+| 📦 **安装程序版** | Windows 用户、正式部署 | ⭐ 简单 | [打包可执行应用程序指南](./docs/打包可执行应用程序指南.md) |
 | 🟢 **绿色版** | Windows 用户、快速体验 | ⭐ 简单 | [绿色版安装指南](https://mp.weixin.qq.com/s/eoo_HeIGxaQZVT76LBbRJQ) |
 | 🐳 **Docker版** | 生产环境、跨平台 | ⭐⭐ 中等 | [Docker 部署指南](https://mp.weixin.qq.com/s/JkA0cOu8xJnoY_3LC5oXNw) |
 | 💻 **本地代码版** | 开发者、定制需求 | ⭐⭐⭐ 较难 | [本地安装指南](https://mp.weixin.qq.com/s/cqUGf-sAzcBV19gdI4sYfA) |
 
 ⚠️ **重要提醒**：在分析股票之前，请按相关文档要求，将股票数据同步完成，否则分析结果将会出现数据错误。
+
+#### 🔨 打包可执行应用程序
+
+如果您想将项目打包成可执行应用程序，以便在其他电脑上安装运行：
+
+```powershell
+# 一键打包（包含便携版和安装程序）
+powershell -ExecutionPolicy Bypass -File scripts\build_executable.ps1
+```
+
+详细说明请参考：[打包可执行应用程序指南](./docs/打包可执行应用程序指南.md)
 
 
 

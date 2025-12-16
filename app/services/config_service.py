@@ -433,13 +433,22 @@ class ConfigService:
             default_llm="glm-4",
             data_source_configs=[
                 DataSourceConfig(
+                    name="TDX",
+                    type=DataSourceType.TDX,
+                    timeout=30,
+                    rate_limit=100,
+                    enabled=True,
+                    priority=10,
+                    description="通达信实时行情接口，提供A股实时行情和历史K线数据，完全免费且无需API Key"
+                ),
+                DataSourceConfig(
                     name="AKShare",
                     type=DataSourceType.AKSHARE,
                     endpoint="https://akshare.akfamily.xyz",
                     timeout=30,
                     rate_limit=100,
                     enabled=True,
-                    priority=1,
+                    priority=5,
                     description="AKShare开源金融数据接口"
                 ),
                 DataSourceConfig(
@@ -450,11 +459,11 @@ class ConfigService:
                     timeout=30,
                     rate_limit=200,
                     enabled=False,
-                    priority=2,
+                    priority=3,
                     description="Tushare专业金融数据接口"
                 )
             ],
-            default_data_source="AKShare",
+            default_data_source="TDX",
             database_configs=[
                 DatabaseConfig(
                     name="MongoDB主库",
@@ -1395,6 +1404,84 @@ class ConfigService:
                         "message": f"BaoStock API 调用失败: {str(e)}",
                         "response_time": time.time() - start_time,
                         "details": None
+                    }
+
+            elif ds_type == "tdx":
+                # 通达信 (TDX) 不需要 API Key 和 endpoint，直接测试连接和获取数据
+                # 🔥 特殊处理：TDX数据源不需要endpoint，即使为空也能正常工作
+                logger.info(f"🧪 [TEST] Testing TDX data source (endpoint not required)")
+                
+                try:
+                    # 导入通达信工具模块（使用与 data_source_manager.py 相同的方式）
+                    from data.tdx_utils import get_tdx_provider
+                    
+                    # 获取数据提供器实例
+                    provider = get_tdx_provider()
+                    
+                    if not provider:
+                        return {
+                            "success": False,
+                            "message": "无法创建通达信数据提供器",
+                            "response_time": time.time() - start_time,
+                            "details": None
+                        }
+                    
+                    # 测试连接
+                    if not provider.connected:
+                        if not provider.connect():
+                            return {
+                                "success": False,
+                                "message": "通达信服务器连接失败，请检查网络连接",
+                                "response_time": time.time() - start_time,
+                                "details": None
+                            }
+                    
+                    # 测试获取实时数据（使用一个常见的股票代码，如平安银行 000001）
+                    test_code = "000001"
+                    real_time_data = provider.get_real_time_data(test_code)
+                    
+                    if real_time_data and 'price' in real_time_data and real_time_data['price']:
+                        response_time = time.time() - start_time
+                        logger.info(f"✅ [TEST] TDX API call successful (response time: {response_time:.2f}s)")
+                        return {
+                            "success": True,
+                            "message": f"成功连接到通达信数据源",
+                            "response_time": response_time,
+                            "details": {
+                                "type": ds_type,
+                                "test_result": f"获取股票 {test_code} 实时数据成功",
+                                "test_stock": test_code,
+                                "test_price": real_time_data.get('price'),
+                                "test_name": real_time_data.get('name', '未知'),
+                                "note": "TDX数据源不需要API端点，系统自动使用内置服务器列表"
+                            }
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "message": "通达信 API 返回数据为空",
+                            "response_time": time.time() - start_time,
+                            "details": None
+                        }
+                except ImportError as e:
+                    logger.error(f"❌ [TEST] TDX library not available: {e}")
+                    return {
+                        "success": False,
+                        "message": "通达信工具模块未安装，请确保 pytdx 库已安装: pip install pytdx",
+                        "response_time": time.time() - start_time,
+                        "details": {
+                            "error": str(e)
+                        }
+                    }
+                except Exception as e:
+                    logger.error(f"❌ [TEST] TDX API call failed: {e}")
+                    return {
+                        "success": False,
+                        "message": f"通达信 API 调用失败: {str(e)}",
+                        "response_time": time.time() - start_time,
+                        "details": {
+                            "error": str(e)
+                        }
                     }
 
             elif ds_type == "yahoo_finance":

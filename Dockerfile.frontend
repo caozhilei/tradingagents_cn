@@ -2,10 +2,25 @@
 # 前后端分离架构 - 前端服务
 
 # 构建阶段：使用Node.js 22.x（与项目开发环境一致）
+# 使用腾讯云镜像源加速下载（如果 Docker daemon 已配置镜像加速，会自动使用）
 FROM node:22-alpine AS build
 
+# 代理配置（从构建参数传入）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+# API 基础 URL（构建时传入，Docker 环境使用空字符串，通过 Nginx 反向代理）
+ARG VITE_API_BASE_URL=""
+
 ENV NODE_ENV=production
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 WORKDIR /app/frontend
+
+# 设置代理环境变量（如果提供了代理参数）
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTPS_PROXY}
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
 
 # 启用Corepack并使用Yarn 1.22.22（项目使用的包管理器）
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
@@ -30,6 +45,7 @@ COPY docs /app/docs
 RUN yarn vite build
 
 # 运行阶段：使用Nginx提供静态文件服务
+# 使用腾讯云镜像源加速下载（如果 Docker daemon 已配置镜像加速，会自动使用）
 FROM nginx:alpine AS runtime
 
 WORKDIR /usr/share/nginx/html

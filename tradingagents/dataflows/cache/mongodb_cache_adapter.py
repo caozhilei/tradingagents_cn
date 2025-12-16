@@ -232,9 +232,12 @@ class MongoDBCacheAdapter:
 
             # 按优先级查询
             for data_source in priority_order:
-                # 构建查询条件
+                # 🔥 修复：同时查询 code 和 symbol 字段（兼容不同数据结构）
                 query = {
-                    "code": code6,
+                    "$or": [
+                        {"code": code6},
+                        {"symbol": code6}
+                    ],
                     "data_source": data_source  # 指定数据源
                 }
                 if report_period:

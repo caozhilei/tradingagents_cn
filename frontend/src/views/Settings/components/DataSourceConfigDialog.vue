@@ -89,15 +89,31 @@
       <!-- 连接配置 -->
       <el-divider content-position="left">连接配置</el-divider>
 
-      <el-form-item label="API端点" prop="endpoint">
+      <el-form-item 
+        v-if="!isTdxDataSource" 
+        label="API端点" 
+        prop="endpoint"
+      >
         <el-input
           v-model="formData.endpoint"
           placeholder="请输入API端点URL"
         />
       </el-form-item>
 
-      <!-- API Key 输入框 -->
-      <el-form-item label="API Key" prop="api_key">
+      <!-- TDX 特殊提示 -->
+      <el-form-item v-if="isTdxDataSource" label="API端点">
+        <el-input
+          v-model="formData.endpoint"
+          placeholder="通达信无需填写API端点（留空即可）"
+          disabled
+        />
+        <div class="form-tip">
+          💡 通达信数据源直接连接到通达信服务器，无需配置API端点。系统会自动使用内置的服务器列表。
+        </div>
+      </el-form-item>
+
+      <!-- API Key 输入框（TDX数据源不需要） -->
+      <el-form-item v-if="!isTdxDataSource" label="API Key" prop="api_key">
         <el-input
           v-model="formData.api_key"
           type="password"
@@ -110,8 +126,20 @@
         </div>
       </el-form-item>
 
-      <!-- API Secret 输入框（某些数据源需要） -->
-      <el-form-item v-if="needsApiSecret" label="API Secret" prop="api_secret">
+      <!-- TDX 特殊提示：不需要API Key -->
+      <el-form-item v-if="isTdxDataSource" label="API Key">
+        <el-input
+          v-model="formData.api_key"
+          placeholder="通达信无需填写API Key（留空即可）"
+          disabled
+        />
+        <div class="form-tip">
+          💡 通达信数据源直接连接到通达信服务器，无需配置API Key。系统会自动连接。
+        </div>
+      </el-form-item>
+
+      <!-- API Secret 输入框（某些数据源需要，TDX不需要） -->
+      <el-form-item v-if="needsApiSecret && !isTdxDataSource" label="API Secret" prop="api_secret">
         <el-input
           v-model="formData.api_secret"
           type="password"
@@ -298,6 +326,11 @@ const needsApiSecret = computed(() => {
   return ['alpha_vantage', 'wind', 'choice'].includes(type)
 })
 
+// 判断是否为 TDX 数据源
+const isTdxDataSource = computed(() => {
+  return formData.value.type?.toLowerCase() === 'tdx'
+})
+
 // 当前选中的数据源信息
 const currentDataSourceInfo = computed(() => {
   if (!formData.value.type) return null
@@ -359,6 +392,12 @@ const paramKeys = ref<string[]>([])
  */
 const dataSourceTypes = [
   // 中国市场数据源
+  {
+    label: '通达信 (TDX)',
+    value: 'tdx',
+    register_url: 'https://github.com/rainx/pytdx',
+    register_guide: '通达信是免费的实时A股行情数据接口，无需注册和API Key即可使用。访问GitHub了解更多：'
+  },
   {
     label: 'Tushare',
     value: 'tushare',
@@ -571,6 +610,14 @@ const handleSubmit = async () => {
     // 后端会判断截断值是否与数据库中的原值匹配
     const payload: any = { ...formData.value }
 
+    // 🔥 TDX数据源特殊处理：删除endpoint字段（TDX不需要API端点）
+    if (isTdxDataSource.value) {
+      delete payload.endpoint
+      delete payload.api_key
+      delete payload.api_secret
+      console.log('🔍 [保存] TDX数据源：删除endpoint、api_key、api_secret字段（TDX不需要这些配置）')
+    }
+
     // 添加日志，显示发送的 API Key
     if (payload.api_key) {
       console.log('🔍 [保存] 发送 API Key:', payload.api_key, '(长度:', payload.api_key.length, ')')
@@ -650,6 +697,20 @@ const handleTest = async () => {
     // 🔥 修复：直接发送截断的 API Key 给后端
     // 后端会判断截断值是否与数据库中的原值匹配
     const testPayload: any = { ...formData.value }
+
+    // 🔥 TDX数据源特殊处理：endpoint、api_key、api_secret为空时设置为null，避免空字符串导致验证失败
+    if (isTdxDataSource.value) {
+      if (!testPayload.endpoint || testPayload.endpoint.trim() === '') {
+        testPayload.endpoint = null
+      }
+      if (!testPayload.api_key || testPayload.api_key.trim() === '') {
+        testPayload.api_key = null
+      }
+      if (!testPayload.api_secret || testPayload.api_secret.trim() === '') {
+        testPayload.api_secret = null
+      }
+      console.log('🔍 [测试连接] TDX数据源：endpoint、api_key、api_secret设置为null（TDX不需要这些配置）')
+    }
 
     // 添加日志，显示发送的 API Key
     if (testPayload.api_key) {

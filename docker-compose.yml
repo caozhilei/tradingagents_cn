@@ -9,6 +9,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        HTTP_PROXY: http://host.docker.internal:10809
+        HTTPS_PROXY: http://host.docker.internal:10809
+        NO_PROXY: localhost,127.0.0.1,mongodb,redis
     image: tradingagents-backend:v1.0.0-preview
     container_name: tradingagents-backend
     ports:
@@ -66,14 +70,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        HTTP_PROXY: http://host.docker.internal:10809
+        HTTPS_PROXY: http://host.docker.internal:10809
+        NO_PROXY: localhost,127.0.0.1
+        # 构建时使用相对路径，通过 Nginx 反向代理访问后端
+        VITE_API_BASE_URL: ""
     image: tradingagents-frontend:v1.0.0-preview
     container_name: tradingagents-frontend
     ports:
       - "3000:80"
     environment:
       TZ: "Asia/Shanghai"
-      # 后端API地址
-      VITE_API_BASE_URL: "http://localhost:8000"
+      # 后端API地址（运行时通过 Nginx 反向代理，不需要设置）
+      VITE_API_BASE_URL: ""
     depends_on:
       backend:
         condition: service_healthy

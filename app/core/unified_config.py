@@ -296,13 +296,23 @@ class UnifiedConfigManager:
         settings = self.get_system_settings()
         data_sources = []
 
+        # TDX（通达信）- 默认数据源（最高优先级）
+        tdx_config = DataSourceConfig(
+            name="TDX",
+            type=DataSourceType.TDX,
+            enabled=True,
+            priority=10,  # 最高优先级
+            description="通达信实时行情接口，提供A股实时行情和历史K线数据，完全免费且无需API Key"
+        )
+        data_sources.append(tdx_config)
+
         # AKShare (默认启用)
         akshare_config = DataSourceConfig(
             name="AKShare",
             type=DataSourceType.AKSHARE,
             endpoint="https://akshare.akfamily.xyz",
             enabled=True,
-            priority=1,
+            priority=5,
             description="AKShare开源金融数据接口"
         )
         data_sources.append(akshare_config)
@@ -315,7 +325,7 @@ class UnifiedConfigManager:
                 api_key=settings.get("tushare_token"),
                 endpoint="http://api.tushare.pro",
                 enabled=True,
-                priority=2,
+                priority=3,
                 description="Tushare专业金融数据接口"
             )
             data_sources.append(tushare_config)
@@ -364,13 +374,23 @@ class UnifiedConfigManager:
         settings = self.get_system_settings()
         data_sources = []
 
+        # TDX（通达信）- 默认数据源（最高优先级）
+        tdx_config = DataSourceConfig(
+            name="TDX",
+            type=DataSourceType.TDX,
+            enabled=True,
+            priority=10,  # 最高优先级
+            description="通达信实时行情接口，提供A股实时行情和历史K线数据，完全免费且无需API Key"
+        )
+        data_sources.append(tdx_config)
+
         # AKShare (默认启用)
         akshare_config = DataSourceConfig(
             name="AKShare",
             type=DataSourceType.AKSHARE,
             endpoint="https://akshare.akfamily.xyz",
             enabled=True,
-            priority=1,
+            priority=5,
             description="AKShare开源金融数据接口"
         )
         data_sources.append(akshare_config)
@@ -383,7 +403,7 @@ class UnifiedConfigManager:
                 api_key=settings.get("tushare_token"),
                 endpoint="http://api.tushare.pro",
                 enabled=True,
-                priority=2,
+                priority=3,
                 description="Tushare专业金融数据接口"
             )
             data_sources.append(tushare_config)

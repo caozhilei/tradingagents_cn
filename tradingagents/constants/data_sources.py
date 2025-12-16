@@ -31,6 +31,7 @@ class DataSourceCode(str, Enum):
     TUSHARE = "tushare"      # Tushare - 专业A股数据
     AKSHARE = "akshare"      # AKShare - 开源金融数据（A股+港股）
     BAOSTOCK = "baostock"    # BaoStock - 免费A股数据
+    TDX = "tdx"              # 通达信 - 实时A股行情数据（免费，无需API Key）
     
     # ==================== 美股数据源 ====================
     YFINANCE = "yfinance"         # yfinance - Yahoo Finance Python库
@@ -130,6 +131,21 @@ DATA_SOURCE_REGISTRY: Dict[str, DataSourceInfo] = {
         official_website="http://baostock.com",
         documentation_url="http://baostock.com/baostock/index.php/Python_API%E6%96%87%E6%A1%A3",
         features=["历史行情", "财务数据", "完全免费", "数据稳定"],
+    ),
+    
+    # 通达信 (TDX)
+    DataSourceCode.TDX: DataSourceInfo(
+        code=DataSourceCode.TDX,
+        name="TongDaXin",
+        display_name="通达信",
+        provider="通达信",
+        description="通达信实时行情接口，提供A股实时行情和历史K线数据，完全免费且无需API Key",
+        supported_markets=["a_shares"],
+        requires_api_key=False,
+        is_free=True,
+        official_website="https://www.tdx.com.cn",
+        documentation_url="https://github.com/rainx/pytdx",
+        features=["实时行情", "历史K线", "五档买卖盘", "技术指标", "完全免费", "无需API Key", "实时数据"],
     ),
     
     # yfinance

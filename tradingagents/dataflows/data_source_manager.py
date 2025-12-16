@@ -33,6 +33,7 @@ class ChinaDataSource(Enum):
     值使用统一的数据源编码
     """
     MONGODB = DataSourceCode.MONGODB  # MongoDB数据库缓存（最高优先级）
+    TDX = DataSourceCode.TDX  # 通达信 - 实时行情（默认数据源）
     TUSHARE = DataSourceCode.TUSHARE
     AKSHARE = DataSourceCode.AKSHARE
     BAOSTOCK = DataSourceCode.BAOSTOCK
@@ -136,6 +137,7 @@ class DataSourceManager:
 
                 # 转换为 ChinaDataSource 枚举（使用统一编码）
                 source_mapping = {
+                    DataSourceCode.TDX: ChinaDataSource.TDX,
                     DataSourceCode.TUSHARE: ChinaDataSource.TUSHARE,
                     DataSourceCode.AKSHARE: ChinaDataSource.AKSHARE,
                     DataSourceCode.BAOSTOCK: ChinaDataSource.BAOSTOCK,
@@ -161,8 +163,9 @@ class DataSourceManager:
             logger.warning(f"⚠️ [数据源优先级] 从数据库读取失败: {e}，使用默认顺序")
 
         # 🔥 回退到默认顺序（兼容性）
-        # 默认顺序：AKShare > Tushare > BaoStock
+        # 默认顺序：TDX（通达信）> AKShare > Tushare > BaoStock
         default_order = [
+            ChinaDataSource.TDX,
             ChinaDataSource.AKSHARE,
             ChinaDataSource.TUSHARE,
             ChinaDataSource.BAOSTOCK,
@@ -209,17 +212,18 @@ class DataSourceManager:
         if self.use_mongodb_cache:
             return ChinaDataSource.MONGODB
 
-        # 从环境变量获取，默认使用AKShare作为第一优先级数据源
-        env_source = os.getenv('DEFAULT_CHINA_DATA_SOURCE', DataSourceCode.AKSHARE).lower()
+        # 从环境变量获取，默认使用TDX（通达信）作为第一优先级数据源
+        env_source = os.getenv('DEFAULT_CHINA_DATA_SOURCE', DataSourceCode.TDX).lower()
 
         # 映射到枚举（使用统一编码）
         source_mapping = {
+            DataSourceCode.TDX: ChinaDataSource.TDX,
             DataSourceCode.TUSHARE: ChinaDataSource.TUSHARE,
             DataSourceCode.AKSHARE: ChinaDataSource.AKSHARE,
             DataSourceCode.BAOSTOCK: ChinaDataSource.BAOSTOCK,
         }
 
-        return source_mapping.get(env_source, ChinaDataSource.AKSHARE)
+        return source_mapping.get(env_source, ChinaDataSource.TDX)
 
     # ==================== Tushare数据接口 ====================
 
@@ -270,6 +274,9 @@ class DataSourceManager:
             # 根据数据源调用相应的获取方法
             if self.current_source == ChinaDataSource.MONGODB:
                 result = self._get_mongodb_fundamentals(symbol)
+            elif self.current_source == ChinaDataSource.TDX:
+                # TDX暂不支持基本面数据，使用其他数据源或生成基本分析
+                result = self._generate_fundamentals_analysis(symbol)
             elif self.current_source == ChinaDataSource.TUSHARE:
                 result = self._get_tushare_fundamentals(symbol)
             elif self.current_source == ChinaDataSource.AKSHARE:
@@ -438,7 +445,7 @@ class DataSourceManager:
             else:
                 logger.warning("⚠️ [数据源配置] 数据库中没有数据源配置，将检查所有已安装的数据源")
                 # 如果数据库中没有配置，默认所有数据源都启用
-                enabled_sources_in_db = {'mongodb', 'tushare', 'akshare', 'baostock'}
+                enabled_sources_in_db = {'mongodb', 'tdx', 'tushare', 'akshare', 'baostock'}
         except Exception as e:
             logger.warning(f"⚠️ [数据源配置] 从数据库读取失败: {e}，将检查所有已安装的数据源")
             # 如果读取失败，默认所有数据源都启用
@@ -501,8 +508,17 @@ class DataSourceManager:
         else:
             logger.info("ℹ️ BaoStock数据源已在数据库中禁用")
 
-        # TDX (通达信) 已移除
-        # 不再检查和支持 TDX 数据源
+        # 检查TDX（通达信）
+        if 'tdx' in enabled_sources_in_db:
+            try:
+                import pytdx
+                from pytdx.hq import TdxHq_API
+                available.append(ChinaDataSource.TDX)
+                logger.info("✅ TDX（通达信）数据源可用且已启用")
+            except ImportError:
+                logger.warning("⚠️ TDX（通达信）数据源不可用: pytdx库未安装")
+        else:
+            logger.info("ℹ️ TDX（通达信）数据源已在数据库中禁用")
 
         return available
 
@@ -553,13 +569,14 @@ class DataSourceManager:
         """获取当前数据源的适配器"""
         if self.current_source == ChinaDataSource.MONGODB:
             return self._get_mongodb_adapter()
+        elif self.current_source == ChinaDataSource.TDX:
+            return self._get_tdx_adapter()
         elif self.current_source == ChinaDataSource.TUSHARE:
             return self._get_tushare_adapter()
         elif self.current_source == ChinaDataSource.AKSHARE:
             return self._get_akshare_adapter()
         elif self.current_source == ChinaDataSource.BAOSTOCK:
             return self._get_baostock_adapter()
-        # TDX 已移除
         else:
             raise ValueError(f"不支持的数据源: {self.current_source}")
 
@@ -599,11 +616,14 @@ class DataSourceManager:
             logger.error(f"❌ BaoStock适配器导入失败: {e}")
             return None
 
-    # TDX 适配器已移除
-    # def _get_tdx_adapter(self):
-    #     """获取TDX适配器 (已移除)"""
-    #     logger.error(f"❌ TDX数据源已不再支持")
-    #     return None
+    def _get_tdx_adapter(self):
+        """获取TDX（通达信）适配器"""
+        try:
+            from data.tdx_utils import get_tdx_provider
+            return get_tdx_provider()
+        except ImportError as e:
+            logger.error(f"❌ TDX适配器导入失败: {e}")
+            return None
 
     def _get_cached_data(self, symbol: str, start_date: str = None, end_date: str = None, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
         """
@@ -1066,6 +1086,10 @@ class DataSourceManager:
 
             if self.current_source == ChinaDataSource.MONGODB:
                 result, actual_source = self._get_mongodb_data(symbol, start_date, end_date, period)
+            elif self.current_source == ChinaDataSource.TDX:
+                logger.info(f"🔍 [股票代码追踪] 调用 TDX（通达信）数据源，传入参数: symbol='{symbol}', period='{period}'")
+                result = self._get_tdx_data(symbol, start_date, end_date, period)
+                actual_source = "tdx"
             elif self.current_source == ChinaDataSource.TUSHARE:
                 logger.info(f"🔍 [股票代码追踪] 调用 Tushare 数据源，传入参数: symbol='{symbol}', period='{period}'")
                 result = self._get_tushare_data(symbol, start_date, end_date, period)
@@ -1076,7 +1100,6 @@ class DataSourceManager:
             elif self.current_source == ChinaDataSource.BAOSTOCK:
                 result = self._get_baostock_data(symbol, start_date, end_date, period)
                 actual_source = "baostock"
-            # TDX 已移除
             else:
                 result = f"❌ 不支持的数据源: {self.current_source.value}"
                 actual_source = None
@@ -1179,6 +1202,35 @@ class DataSourceManager:
             logger.error(f"❌ [数据来源: MongoDB异常] 获取{period}数据失败: {symbol}, 错误: {e}")
             # MongoDB异常，降级到其他数据源
             return self._try_fallback_sources(symbol, start_date, end_date, period)
+
+    def _get_tdx_data(self, symbol: str, start_date: str, end_date: str, period: str = "daily") -> str:
+        """使用TDX（通达信）获取多周期数据"""
+        logger.debug(f"📊 [TDX] 调用参数: symbol={symbol}, start_date={start_date}, end_date={end_date}, period={period}")
+
+        start_time = time.time()
+        try:
+            # 使用通达信的统一接口
+            from data.tdx_utils import get_china_stock_data
+            
+            # 调用通达信接口获取数据
+            result = get_china_stock_data(symbol, start_date, end_date)
+            
+            duration = time.time() - start_time
+            
+            if result and not result.startswith("❌"):
+                logger.info(f"✅ [TDX] 成功获取{symbol}数据，耗时{duration:.2f}秒")
+                return result
+            else:
+                logger.warning(f"⚠️ [TDX] 获取{symbol}数据失败: {result}")
+                return result or f"❌ TDX数据源获取失败: {symbol}"
+                
+        except Exception as e:
+            duration = time.time() - start_time
+            error_msg = f"❌ TDX数据源获取失败: {str(e)}"
+            logger.error(f"{error_msg}，耗时{duration:.2f}秒")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return error_msg
 
     def _get_tushare_data(self, symbol: str, start_date: str, end_date: str, period: str = "daily") -> str:
         """使用Tushare获取多周期数据 - 使用provider + 统一缓存"""

@@ -3,10 +3,16 @@
 # 支持多架构: amd64, arm64
 
 # 使用 Debian Bookworm (稳定版) 而不是 Trixie (测试版)
+# 使用腾讯云镜像源加速下载（如果 Docker daemon 已配置镜像加速，会自动使用）
 FROM python:3.10-slim-bookworm
 
 # 获取构建架构信息
 ARG TARGETARCH
+
+# 代理配置（从构建参数传入）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -21,10 +27,23 @@ WORKDIR /app
 # - wkhtmltopdf: 从官方下载（用于 PDF 生成）
 # - 中文字体: 用于 PDF 中文显示
 RUN mkdir -p /app/logs /app/data /app/config && \
+    # 配置 apt 代理（如果提供了代理参数）
+    if [ -n "$HTTP_PROXY" ]; then \
+        echo "Acquire::http::Proxy \"$HTTP_PROXY\";" > /etc/apt/apt.conf.d/99proxy && \
+        echo "Acquire::https::Proxy \"$HTTPS_PROXY\";" >> /etc/apt/apt.conf.d/99proxy && \
+        echo "配置 apt 使用代理: $HTTP_PROXY"; \
+    fi && \
     # 配置 apt 重试和超时
     echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries && \
-    echo 'Acquire::http::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries && \
-    echo 'Acquire::https::Timeout "30";' >> /etc/apt/apt.conf.d/80-retries && \
+    echo 'Acquire::http::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries && \
+    echo 'Acquire::https::Timeout "60";' >> /etc/apt/apt.conf.d/80-retries && \
+    # 配置 wget 和 curl 代理（如果提供了代理参数）
+    if [ -n "$HTTP_PROXY" ]; then \
+        export http_proxy=$HTTP_PROXY && \
+        export https_proxy=$HTTPS_PROXY && \
+        export HTTP_PROXY=$HTTP_PROXY && \
+        export HTTPS_PROXY=$HTTPS_PROXY; \
+    fi && \
     # 更新软件源，允许失败后继续
     (apt-get update || apt-get update || apt-get update) && \
     apt-get install -y --no-install-recommends \
@@ -71,13 +90,17 @@ RUN pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple && \
 # 复制后端代码和必需模块
 COPY app ./app
 COPY tradingagents ./tradingagents
+# 包含通达信工具模块
+COPY data ./data
 COPY config ./config
 COPY scripts ./scripts
 COPY docs ./docs
 COPY install ./install
 
-# 复制Docker环境配置文件
-COPY .env.docker ./.env
+# 复制Docker环境配置文件（如果存在）
+# 如果 .env.docker 不存在，将使用 docker-compose.yml 中的环境变量
+COPY .env.docker* ./
+RUN if [ -f .env.docker ]; then cp .env.docker .env; fi
 
 # 暴露后端端口（与docker-compose.v1.0.0.yml一致）
 EXPOSE 8000

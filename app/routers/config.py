@@ -711,6 +711,12 @@ async def add_data_source_config(
 
         _req = request.model_dump()
 
+        # 🔥 TDX数据源特殊处理：删除endpoint字段（TDX不需要API端点）
+        ds_type = _req.get('type')
+        if ds_type == 'tdx':
+            _req['endpoint'] = None
+            logger.info(f"🔍 [TDX数据源] 删除endpoint字段（TDX不需要API端点）")
+
         # 处理 API Key
         if 'api_key' in _req:
             api_key = _req.get('api_key', '')
@@ -1100,6 +1106,12 @@ async def update_data_source_config(
                 # 更新配置
                 # 🔥 修改：处理 API Key 的更新逻辑（与大模型厂家管理逻辑一致）
                 _req = request.model_dump()
+
+                # 🔥 TDX数据源特殊处理：删除endpoint字段（TDX不需要API端点）
+                ds_type = _req.get('type') or ds_config.type.value if hasattr(ds_config.type, 'value') else str(ds_config.type)
+                if ds_type == 'tdx' or ds_config.type.value == 'tdx':
+                    _req['endpoint'] = None
+                    logger.info(f"🔍 [TDX数据源] 删除endpoint字段（TDX不需要API端点）")
 
                 # 处理 API Key
                 if 'api_key' in _req:

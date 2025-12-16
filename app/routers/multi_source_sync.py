@@ -51,6 +51,7 @@ async def get_data_sources_status():
 
             # 根据数据源类型提供描述
             descriptions = {
+                "tdx": "通达信实时行情接口，提供A股实时行情和历史K线数据，完全免费且无需API Key",
                 "tushare": "专业金融数据API，提供高质量的A股数据和财务指标",
                 "akshare": "开源金融数据库，提供基础的股票信息",
                 "baostock": "免费开源的证券数据平台，提供历史数据"
@@ -104,6 +105,7 @@ async def get_current_data_source():
 
         # 根据数据源类型提供描述
         descriptions = {
+            "tdx": "通达信实时行情接口",
             "tushare": "专业金融数据API",
             "akshare": "开源金融数据库",
             "baostock": "免费证券数据平台"

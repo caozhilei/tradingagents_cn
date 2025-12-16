@@ -86,8 +86,15 @@ logs/
 *.log
 log/
 
-# 数据文件
-data/
+# 数据文件（但保留Python模块）
+data/__pycache__/
+data/*.pyc
+data/analysis_results/
+data/backups/
+data/cache/
+data/exports/
+data/reports/
+data/scripts/
 *.db
 *.sqlite
 *.sqlite3

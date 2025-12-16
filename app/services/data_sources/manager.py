@@ -13,6 +13,14 @@ from .baostock_adapter import BaoStockAdapter
 
 logger = logging.getLogger(__name__)
 
+# 尝试导入TDX适配器
+try:
+    from .tdx_adapter import TDXAdapter
+    TDX_ADAPTER_AVAILABLE = True
+except ImportError:
+    TDX_ADAPTER_AVAILABLE = False
+    logger.warning("TDX适配器不可用，跳过导入")
+
 
 class DataSourceManager:
     """
@@ -23,11 +31,20 @@ class DataSourceManager:
     """
 
     def __init__(self):
-        self.adapters: List[DataSourceAdapter] = [
-            TushareAdapter(),
+        adapters_list = [
             AKShareAdapter(),
+            TushareAdapter(),
             BaoStockAdapter(),
         ]
+        
+        # 添加TDX适配器（如果可用）
+        if TDX_ADAPTER_AVAILABLE:
+            adapters_list.insert(0, TDXAdapter())  # TDX优先级最高，放在最前面
+            logger.info("✅ TDX适配器已添加到数据源管理器")
+        else:
+            logger.warning("⚠️ TDX适配器不可用，跳过添加")
+        
+        self.adapters: List[DataSourceAdapter] = adapters_list
 
         # 从数据库加载优先级配置
         self._load_priority_from_database()

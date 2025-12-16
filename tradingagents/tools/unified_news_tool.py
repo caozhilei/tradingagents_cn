@@ -22,7 +22,7 @@ class UnifiedNewsAnalyzer:
         """
         self.toolkit = toolkit
         
-    def get_stock_news_unified(self, stock_code: str, max_news: int = 10, model_info: str = "") -> str:
+    def get_stock_news_unified(self, stock_code: str, max_news: int = 10, model_info: str = "", current_date: str = None) -> str:
         """
         统一新闻获取接口
         根据股票代码自动识别股票类型并获取相应新闻
@@ -31,11 +31,14 @@ class UnifiedNewsAnalyzer:
             stock_code: 股票代码
             max_news: 最大新闻数量
             model_info: 当前使用的模型信息，用于特殊处理
+            current_date: 分析时间点（格式：YYYY-MM-DD），只获取该时间点之前的新闻
             
         Returns:
             str: 格式化的新闻内容
         """
         logger.info(f"[统一新闻工具] 开始获取 {stock_code} 的新闻，模型: {model_info}")
+        if current_date:
+            logger.info(f"[统一新闻工具] 📅 分析时间点: {current_date}（只获取该时间点之前的新闻）")
         logger.info(f"[统一新闻工具] 🤖 当前模型信息: {model_info}")
         
         # 识别股票类型
@@ -44,14 +47,14 @@ class UnifiedNewsAnalyzer:
         
         # 根据股票类型调用相应的获取方法
         if stock_type == "A股":
-            result = self._get_a_share_news(stock_code, max_news, model_info)
+            result = self._get_a_share_news(stock_code, max_news, model_info, current_date)
         elif stock_type == "港股":
-            result = self._get_hk_share_news(stock_code, max_news, model_info)
+            result = self._get_hk_share_news(stock_code, max_news, model_info, current_date)
         elif stock_type == "美股":
-            result = self._get_us_share_news(stock_code, max_news, model_info)
+            result = self._get_us_share_news(stock_code, max_news, model_info, current_date)
         else:
             # 默认使用A股逻辑
-            result = self._get_a_share_news(stock_code, max_news, model_info)
+            result = self._get_a_share_news(stock_code, max_news, model_info, current_date)
         
         # 🔍 添加详细的结果调试日志
         logger.info(f"[统一新闻工具] 📊 新闻获取完成，结果长度: {len(result)} 字符")
@@ -90,13 +93,14 @@ class UnifiedNewsAnalyzer:
         else:
             return "A股"
 
-    def _get_news_from_database(self, stock_code: str, max_news: int = 10) -> str:
+    def _get_news_from_database(self, stock_code: str, max_news: int = 10, current_date: str = None) -> str:
         """
         从数据库获取新闻
 
         Args:
             stock_code: 股票代码
             max_news: 最大新闻数量
+            current_date: 分析时间点（格式：YYYY-MM-DD），只获取该时间点之前的新闻
 
         Returns:
             str: 格式化的新闻内容，如果没有新闻则返回空字符串
@@ -120,15 +124,34 @@ class UnifiedNewsAnalyzer:
             clean_code = stock_code.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
                                    .replace('.XSHE', '').replace('.XSHG', '').replace('.HK', '')
 
-            # 查询最近30天的新闻（扩大时间范围）
-            thirty_days_ago = datetime.now() - timedelta(days=30)
+            # 🔥 根据 current_date 设置时间过滤条件
+            time_filter = {}
+            if current_date:
+                try:
+                    # 将字符串日期转换为 datetime 对象（作为截止时间）
+                    from datetime import datetime as dt
+                    analysis_date = dt.strptime(current_date, "%Y-%m-%d")
+                    # 设置截止时间为分析日期的23:59:59
+                    analysis_date_end = dt.combine(analysis_date.date(), dt.max.time())
+                    time_filter = {'$lte': analysis_date_end}
+                    logger.info(f"[统一新闻工具] 📅 使用分析时间点过滤: 只获取 {current_date} 之前的新闻")
+                except Exception as e:
+                    logger.warning(f"[统一新闻工具] ⚠️ 解析 current_date 失败: {e}，将使用默认时间范围")
+                    # 如果解析失败，使用默认的30天范围
+                    thirty_days_ago = datetime.now() - timedelta(days=30)
+                    time_filter = {'$gte': thirty_days_ago}
+            else:
+                # 如果没有指定 current_date，使用默认的30天范围
+                thirty_days_ago = datetime.now() - timedelta(days=30)
+                time_filter = {'$gte': thirty_days_ago}
+                logger.info(f"[统一新闻工具] 📅 未指定分析时间点，使用默认时间范围（最近30天）")
 
             # 尝试多种查询方式（使用 symbol 字段）
             query_list = [
-                {'symbol': clean_code, 'publish_time': {'$gte': thirty_days_ago}},
-                {'symbol': stock_code, 'publish_time': {'$gte': thirty_days_ago}},
-                {'symbols': clean_code, 'publish_time': {'$gte': thirty_days_ago}},
-                # 如果最近30天没有新闻，则查询所有新闻（不限时间）
+                {'symbol': clean_code, 'publish_time': time_filter},
+                {'symbol': stock_code, 'publish_time': time_filter},
+                {'symbols': clean_code, 'publish_time': time_filter},
+                # 如果指定了时间点但该时间点之前没有新闻，则查询所有新闻（不限时间）
                 {'symbol': clean_code},
                 {'symbols': clean_code},
             ]
@@ -148,6 +171,8 @@ class UnifiedNewsAnalyzer:
             # 格式化新闻
             report = f"# {stock_code} 最新新闻 (数据库缓存)\n\n"
             report += f"📅 查询时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            if current_date:
+                report += f"📅 分析时间点: {current_date}（仅显示该时间点之前的新闻）\n"
             report += f"📊 新闻数量: {len(news_items)} 条\n\n"
 
             for i, news in enumerate(news_items, 1):
@@ -279,17 +304,20 @@ class UnifiedNewsAnalyzer:
             logger.error(traceback.format_exc())
             return False
 
-    def _get_a_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
+    def _get_a_share_news(self, stock_code: str, max_news: int, model_info: str = "", current_date: str = None) -> str:
         """获取A股新闻"""
         logger.info(f"[统一新闻工具] 获取A股 {stock_code} 新闻")
 
-        # 获取当前日期
-        curr_date = datetime.now().strftime("%Y-%m-%d")
+        # 获取当前日期（如果没有指定分析时间点，使用当前日期）
+        if current_date:
+            curr_date = current_date
+        else:
+            curr_date = datetime.now().strftime("%Y-%m-%d")
 
         # 优先级0: 从数据库获取新闻（最高优先级）
         try:
             logger.info(f"[统一新闻工具] 🔍 优先从数据库获取 {stock_code} 的新闻...")
-            db_news = self._get_news_from_database(stock_code, max_news)
+            db_news = self._get_news_from_database(stock_code, max_news, current_date)
             if db_news:
                 logger.info(f"[统一新闻工具] ✅ 数据库新闻获取成功: {len(db_news)} 字符")
                 return self._format_news_result(db_news, "数据库缓存", model_info)
@@ -364,12 +392,15 @@ class UnifiedNewsAnalyzer:
         
         return "❌ 无法获取A股新闻数据，所有新闻源均不可用"
     
-    def _get_hk_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
+    def _get_hk_share_news(self, stock_code: str, max_news: int, model_info: str = "", current_date: str = None) -> str:
         """获取港股新闻"""
         logger.info(f"[统一新闻工具] 获取港股 {stock_code} 新闻")
         
-        # 获取当前日期
-        curr_date = datetime.now().strftime("%Y-%m-%d")
+        # 获取当前日期（如果没有指定分析时间点，使用当前日期）
+        if current_date:
+            curr_date = current_date
+        else:
+            curr_date = datetime.now().strftime("%Y-%m-%d")
         
         # 优先级1: Google新闻（港股搜索）
         try:
@@ -410,12 +441,15 @@ class UnifiedNewsAnalyzer:
         
         return "❌ 无法获取港股新闻数据，所有新闻源均不可用"
     
-    def _get_us_share_news(self, stock_code: str, max_news: int, model_info: str = "") -> str:
+    def _get_us_share_news(self, stock_code: str, max_news: int, model_info: str = "", current_date: str = None) -> str:
         """获取美股新闻"""
         logger.info(f"[统一新闻工具] 获取美股 {stock_code} 新闻")
         
-        # 获取当前日期
-        curr_date = datetime.now().strftime("%Y-%m-%d")
+        # 获取当前日期（如果没有指定分析时间点，使用当前日期）
+        if current_date:
+            curr_date = current_date
+        else:
+            curr_date = datetime.now().strftime("%Y-%m-%d")
         
         # 优先级1: OpenAI全球新闻
         try:
@@ -553,7 +587,7 @@ def create_unified_news_tool(toolkit):
     """创建统一新闻工具函数"""
     analyzer = UnifiedNewsAnalyzer(toolkit)
     
-    def get_stock_news_unified(stock_code: str, max_news: int = 100, model_info: str = ""):
+    def get_stock_news_unified(stock_code: str, max_news: int = 100, model_info: str = "", current_date: str = None):
         """
         统一新闻获取工具
         
@@ -561,6 +595,7 @@ def create_unified_news_tool(toolkit):
             stock_code (str): 股票代码 (支持A股如000001、港股如0700.HK、美股如AAPL)
             max_news (int): 最大新闻数量，默认100
             model_info (str): 当前使用的模型信息，用于特殊处理
+            current_date (str): 分析时间点（格式：YYYY-MM-DD），只获取该时间点之前的新闻
         
         Returns:
             str: 格式化的新闻内容
@@ -568,7 +603,7 @@ def create_unified_news_tool(toolkit):
         if not stock_code:
             return "❌ 错误: 未提供股票代码"
         
-        return analyzer.get_stock_news_unified(stock_code, max_news, model_info)
+        return analyzer.get_stock_news_unified(stock_code, max_news, model_info, current_date)
     
     # 设置工具属性
     get_stock_news_unified.name = "get_stock_news_unified"
@@ -578,11 +613,18 @@ def create_unified_news_tool(toolkit):
 功能:
 - 自动识别股票类型（A股/港股/美股）
 - 根据股票类型选择最佳新闻源
-- A股: 优先东方财富 -> Google中文 -> OpenAI
+- A股: 优先数据库缓存 -> 东方财富 -> Google中文 -> OpenAI
 - 港股: 优先Google -> OpenAI -> 实时新闻
 - 美股: 优先OpenAI -> Google英文 -> FinnHub
 - 返回格式化的新闻内容
 - 支持Google模型的特殊长度控制
+- 如果提供了 current_date 参数，只获取该时间点之前的新闻（用于历史分析）
+
+参数:
+- stock_code: 股票代码（必需）
+- max_news: 最大新闻数量（可选，默认100）
+- model_info: 模型信息（可选，用于特殊处理）
+- current_date: 分析时间点，格式：YYYY-MM-DD（可选，如果提供则只获取该时间点之前的新闻）
 """
     
     return get_stock_news_unified

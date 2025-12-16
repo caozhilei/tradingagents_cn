@@ -1,0 +1,219 @@
+# .env 配置文件模板
+
+## 📋 说明
+
+这是 TradingAgents-CN 项目的环境变量配置模板。复制此内容到项目根目录的 `.env` 文件中。
+
+**注意**: `.env` 文件已加入 `.gitignore`，不会提交到版本控制系统。
+
+## 🔧 完整配置模板
+
+```bash
+# =============================================================================
+# TradingAgents-CN 环境变量配置
+# =============================================================================
+# 
+# 使用说明：
+# 1. 复制此内容到项目根目录的 .env 文件
+# 2. 根据实际情况修改配置值
+# 3. 不要将 .env 文件提交到版本控制系统
+#
+# =============================================================================
+
+# =============================================================================
+# 基础配置
+# =============================================================================
+DEBUG=true
+HOST=0.0.0.0
+PORT=8000
+ENVIRONMENT=development
+
+# =============================================================================
+# MongoDB 数据库配置
+# =============================================================================
+# 主机地址（Docker环境使用 mongodb，宿主机使用 localhost）
+MONGODB_HOST=localhost
+# 端口号
+MONGODB_PORT=27017
+# 用户名（如果MongoDB启用了认证）
+MONGODB_USERNAME=admin
+# 密码（如果MongoDB启用了认证）
+MONGODB_PASSWORD=tradingagents123
+# 数据库名称
+MONGODB_DATABASE=tradingagents
+# 认证源（通常是 admin）
+MONGODB_AUTH_SOURCE=admin
+
+# =============================================================================
+# Redis 缓存配置
+# =============================================================================
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+
+# =============================================================================
+# 安全配置
+# =============================================================================
+# JWT密钥（生产环境必须修改为随机字符串）
+JWT_SECRET=change-me-in-production-use-random-string
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+# =============================================================================
+# LLM API 密钥配置（至少配置一个）
+# =============================================================================
+
+# DeepSeek（推荐，性价比高）
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+
+# OpenAI
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# 通义千问（阿里云）
+DASHSCOPE_API_KEY=your_dashscope_api_key_here
+
+# Google Gemini
+GOOGLE_API_KEY=your_google_api_key_here
+
+# =============================================================================
+# 数据源配置
+# =============================================================================
+
+# Tushare（A股数据，推荐）
+TUSHARE_TOKEN=your_tushare_token_here
+TUSHARE_ENABLED=true
+
+# FinnHub（美股数据）
+FINNHUB_API_KEY=your_finnhub_api_key_here
+
+# =============================================================================
+# 数据同步任务配置
+# =============================================================================
+
+# AKShare统一数据同步
+AKSHARE_UNIFIED_ENABLED=true
+AKSHARE_BASIC_INFO_SYNC_ENABLED=true
+AKSHARE_BASIC_INFO_SYNC_CRON=0 3 * * *
+AKSHARE_QUOTES_SYNC_ENABLED=true
+AKSHARE_QUOTES_SYNC_CRON=*/30 9-15 * * 1-5
+AKSHARE_HISTORICAL_SYNC_ENABLED=true
+AKSHARE_HISTORICAL_SYNC_CRON=0 17 * * 1-5
+AKSHARE_FINANCIAL_SYNC_ENABLED=true
+AKSHARE_FINANCIAL_SYNC_CRON=0 4 * * 0
+AKSHARE_STATUS_CHECK_ENABLED=true
+AKSHARE_STATUS_CHECK_CRON=30 * * * *
+
+# Tushare统一数据同步
+TUSHARE_UNIFIED_ENABLED=true
+TUSHARE_BASIC_INFO_SYNC_ENABLED=true
+TUSHARE_BASIC_INFO_SYNC_CRON=0 3 * * *
+TUSHARE_QUOTES_SYNC_ENABLED=true
+TUSHARE_QUOTES_SYNC_CRON=*/30 9-15 * * 1-5
+TUSHARE_HISTORICAL_SYNC_ENABLED=true
+TUSHARE_HISTORICAL_SYNC_CRON=0 17 * * 1-5
+TUSHARE_FINANCIAL_SYNC_ENABLED=true
+TUSHARE_FINANCIAL_SYNC_CRON=0 4 * * 0
+TUSHARE_STATUS_CHECK_ENABLED=true
+TUSHARE_STATUS_CHECK_CRON=30 * * * *
+
+# BaoStock统一数据同步
+BAOSTOCK_UNIFIED_ENABLED=true
+BAOSTOCK_BASIC_INFO_SYNC_ENABLED=true
+BAOSTOCK_BASIC_INFO_SYNC_CRON=0 3 * * *
+BAOSTOCK_DAILY_QUOTES_SYNC_ENABLED=true
+BAOSTOCK_DAILY_QUOTES_SYNC_CRON=0 18 * * 1-5
+BAOSTOCK_HISTORICAL_SYNC_ENABLED=true
+BAOSTOCK_HISTORICAL_SYNC_CRON=0 17 * * 1-5
+BAOSTOCK_STATUS_CHECK_ENABLED=true
+BAOSTOCK_STATUS_CHECK_CRON=30 * * * *
+
+# =============================================================================
+# Docker 环境配置
+# =============================================================================
+DOCKER_CONTAINER=false
+
+# =============================================================================
+# 时区配置
+# =============================================================================
+TIMEZONE=Asia/Shanghai
+```
+
+## 📝 MongoDB配置详细说明
+
+### 必需配置
+
+```bash
+# 数据库名称（固定）
+MONGODB_DATABASE=tradingagents
+```
+
+### 连接配置
+
+根据运行环境选择：
+
+#### 本地开发（无认证）
+```bash
+MONGODB_HOST=localhost
+MONGODB_PORT=27017
+MONGODB_USERNAME=
+MONGODB_PASSWORD=
+MONGODB_AUTH_SOURCE=admin
+```
+
+#### Docker Compose（宿主机运行）
+```bash
+MONGODB_HOST=localhost
+MONGODB_PORT=27017
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=tradingagents123
+MONGODB_AUTH_SOURCE=admin
+```
+
+#### Docker容器内运行
+```bash
+MONGODB_HOST=mongodb
+MONGODB_PORT=27017
+MONGODB_USERNAME=admin
+MONGODB_PASSWORD=tradingagents123
+MONGODB_AUTH_SOURCE=admin
+```
+
+## 🔄 财务数据同步配置
+
+### 启用AKShare财务数据同步
+
+```bash
+AKSHARE_UNIFIED_ENABLED=true
+AKSHARE_FINANCIAL_SYNC_ENABLED=true
+AKSHARE_FINANCIAL_SYNC_CRON=0 4 * * 0  # 每周日凌晨4点
+```
+
+### 启用Tushare财务数据同步
+
+```bash
+TUSHARE_UNIFIED_ENABLED=true
+TUSHARE_FINANCIAL_SYNC_ENABLED=true
+TUSHARE_FINANCIAL_SYNC_CRON=0 4 * * 0  # 每周日凌晨4点
+TUSHARE_TOKEN=your_tushare_token_here  # 必需
+```
+
+## ✅ 配置验证
+
+创建 `.env` 文件后，运行诊断脚本验证：
+
+```bash
+py scripts/使用应用配置诊断财务数据.py
+```
+
+应该看到：
+- ✅ MongoDB连接成功
+- ✅ 配置信息正确显示
+
+---
+
+**参考文档**: [环境变量配置指南](./环境变量配置指南.md)
+
+

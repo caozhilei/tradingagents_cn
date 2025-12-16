@@ -154,6 +154,7 @@ class DataSourceType(str, Enum):
     MONGODB = "mongodb"
 
     # 中国市场数据源
+    TDX = "tdx"              # 通达信 - 实时行情（默认）
     TUSHARE = "tushare"
     AKSHARE = "akshare"
     BAOSTOCK = "baostock"

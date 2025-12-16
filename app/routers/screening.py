@@ -276,12 +276,14 @@ async def validate_conditions(conditions: List[ScreeningCondition], user: dict =
 async def get_industries(user: dict = Depends(get_current_user)):
     """
     获取数据库中所有可用的行业列表
-    根据系统配置的数据源优先级，从优先级最高的数据源获取行业分类数据
+    根据系统配置的数据源优先级，从所有启用的数据源获取行业分类数据（包括TDX）
+    如果数据库中的行业数据不足，从AKShare实时获取行业列表作为补充
     返回按股票数量排序的行业列表
     """
     try:
         from app.core.database import get_mongo_db
         from app.core.unified_config import UnifiedConfigManager
+        import asyncio
 
         db = get_mongo_db()
         collection = db["stock_basic_info"]
@@ -290,33 +292,37 @@ async def get_industries(user: dict = Depends(get_current_user)):
         config = UnifiedConfigManager()
         data_source_configs = await config.get_data_source_configs_async()
 
-        # 提取启用的数据源，按优先级排序（已排序）
-        enabled_sources = [
-            ds.type.lower() for ds in data_source_configs
-            if ds.enabled and ds.type.lower() in ['tushare', 'akshare', 'baostock']
-        ]
+        # 提取启用的数据源，按优先级排序（包括TDX）
+        enabled_sources = []
+        for ds in data_source_configs:
+            if not ds.enabled:
+                continue
+            # 处理枚举类型：如果type是枚举，获取value；否则直接使用
+            ds_type = ds.type.value if hasattr(ds.type, 'value') else str(ds.type)
+            ds_type_lower = ds_type.lower()
+            if ds_type_lower in ['tushare', 'akshare', 'baostock', 'tdx']:
+                enabled_sources.append(ds_type_lower)
 
         if not enabled_sources:
             # 如果没有配置，使用默认顺序
-            enabled_sources = ['tushare', 'akshare', 'baostock']
+            enabled_sources = ['tushare', 'akshare', 'baostock', 'tdx']
 
         logger.info(f"[get_industries] 数据源优先级: {enabled_sources}")
 
-        # 🔥 按优先级查询：优先使用优先级最高的数据源
-        preferred_source = enabled_sources[0] if enabled_sources else 'tushare'
-
-        # 聚合查询：按行业分组并统计股票数量（只查询指定数据源）
+        # 🔥 从所有启用的数据源查询行业（合并结果）
+        # 首先尝试从数据库查询所有启用数据源的行业数据
         pipeline = [
             {
                 "$match": {
-                    "source": preferred_source,  # 🔥 只查询优先级最高的数据源
-                    "industry": {"$ne": None, "$ne": ""}  # 过滤空行业
+                    "source": {"$in": enabled_sources},  # 🔥 查询所有启用的数据源（包括TDX）
+                    "industry": {"$ne": None, "$ne": "", "$exists": True}  # 过滤空行业
                 }
             },
             {
                 "$group": {
                     "_id": "$industry",
-                    "count": {"$sum": 1}
+                    "count": {"$sum": 1},
+                    "sources": {"$addToSet": "$source"}  # 记录该行业来自哪些数据源
                 }
             },
             {"$sort": {"count": -1}},  # 按股票数量降序排序
@@ -324,12 +330,14 @@ async def get_industries(user: dict = Depends(get_current_user)):
                 "$project": {
                     "industry": "$_id",
                     "count": 1,
+                    "sources": 1,
                     "_id": 0
                 }
             }
         ]
 
         industries = []
+        industry_dict = {}  # 用于去重和合并
         async for doc in collection.aggregate(pipeline):
             # 清洗字段，避免 NaN/Inf 导致 JSON 序列化失败
             raw_industry = doc.get("industry")
@@ -343,9 +351,12 @@ async def get_industries(user: dict = Depends(get_current_user)):
                     else:
                         safe_industry = str(raw_industry)
                 else:
-                    safe_industry = str(raw_industry)
+                    safe_industry = str(raw_industry).strip()
             except Exception:
                 safe_industry = ""
+
+            if not safe_industry:  # 跳过空行业
+                continue
 
             raw_count = doc.get("count", 0)
             safe_count = 0
@@ -360,18 +371,112 @@ async def get_industries(user: dict = Depends(get_current_user)):
             except Exception:
                 safe_count = 0
 
-            industries.append({
-                "value": safe_industry,
-                "label": safe_industry,
-                "count": safe_count,
-            })
+            # 如果行业已存在，合并计数（取最大值）
+            if safe_industry in industry_dict:
+                industry_dict[safe_industry]["count"] = max(industry_dict[safe_industry]["count"], safe_count)
+            else:
+                industry_dict[safe_industry] = {
+                    "value": safe_industry,
+                    "label": safe_industry,
+                    "count": safe_count,
+                }
 
-        logger.info(f"[get_industries] 从数据源 {preferred_source} 返回 {len(industries)} 个行业")
+        industries = list(industry_dict.values())
+        industries.sort(key=lambda x: x["count"], reverse=True)  # 按股票数量降序排序
+
+        logger.info(f"[get_industries] 从数据库返回 {len(industries)} 个行业（数据源: {enabled_sources}）")
+
+        # 🔥 如果行业数据不足（少于10个），尝试从AKShare实时获取补充（限制数量避免超时）
+        if len(industries) < 10:
+            logger.info(f"[get_industries] 数据库行业数据不足（{len(industries)}个），尝试从AKShare实时获取补充（采样50只股票）...")
+            try:
+                from app.services.data_sources.akshare_adapter import AKShareAdapter
+                import akshare as ak
+
+                akshare_adapter = AKShareAdapter()
+                if akshare_adapter.is_available():
+                    # 从AKShare获取股票列表并提取行业信息（采样方式）
+                    def fetch_stock_list():
+                        try:
+                            # 使用AKShare获取A股股票列表
+                            return ak.stock_info_a_code_name()
+                        except Exception as e:
+                            logger.warning(f"[get_industries] AKShare获取股票列表失败: {e}")
+                            return None
+
+                    stock_list_df = await asyncio.to_thread(fetch_stock_list)
+                    if stock_list_df is not None and not stock_list_df.empty:
+                        # 提取股票代码（6位），采样50只股票（每20只取1只，覆盖不同市场）
+                        stock_codes_all = stock_list_df['code'].apply(lambda x: str(x).zfill(6)).tolist()
+                        # 采样策略：取前50只，覆盖不同代码段
+                        sample_size = min(50, len(stock_codes_all))
+                        step = max(1, len(stock_codes_all) // sample_size)
+                        stock_codes = stock_codes_all[::step][:sample_size]
+                        
+                        # 批量获取行业信息
+                        akshare_industries = {}
+                        success_count = 0
+                        for code in stock_codes:
+                            try:
+                                def fetch_stock_info():
+                                    try:
+                                        return ak.stock_individual_info_em(symbol=code)
+                                    except:
+                                        return None
+                                
+                                stock_info = await asyncio.to_thread(fetch_stock_info)
+                                if stock_info is not None and not stock_info.empty:
+                                    # 提取行业信息
+                                    industry_row = stock_info[stock_info['item'] == '所属行业']
+                                    if not industry_row.empty:
+                                        industry_name = str(industry_row['value'].iloc[0]).strip()
+                                        if industry_name and industry_name not in ['-', '--', '未知', '']:
+                                            if industry_name not in akshare_industries:
+                                                akshare_industries[industry_name] = 0
+                                            akshare_industries[industry_name] += 1
+                                            success_count += 1
+                                
+                                # 添加延迟，避免API限流
+                                if success_count % 10 == 0:  # 每10个请求后延迟稍长
+                                    await asyncio.sleep(0.2)
+                                else:
+                                    await asyncio.sleep(0.05)
+                            except Exception as e:
+                                logger.debug(f"[get_industries] 获取{code}行业信息失败: {e}")
+                                continue
+
+                        # 合并AKShare的行业数据
+                        if akshare_industries:
+                            for industry_name, count in akshare_industries.items():
+                                if industry_name in industry_dict:
+                                    # 如果已存在，更新计数（取较大值）
+                                    industry_dict[industry_name]["count"] = max(industry_dict[industry_name]["count"], count)
+                                else:
+                                    # 新增行业
+                                    industry_dict[industry_name] = {
+                                        "value": industry_name,
+                                        "label": industry_name,
+                                        "count": count,
+                                    }
+
+                            industries = list(industry_dict.values())
+                            industries.sort(key=lambda x: x["count"], reverse=True)
+                            logger.info(f"[get_industries] 从AKShare补充了 {len(akshare_industries)} 个行业，共 {len(industries)} 个行业")
+            except Exception as e:
+                logger.warning(f"[get_industries] 从AKShare获取行业数据失败: {e}")
+
+        # 确定实际使用的数据源
+        used_sources = []
+        if industries:
+            used_sources = list(set(enabled_sources))
+        if len(industries) > 0 and any('akshare' in str(ind).lower() for ind in industries[:10]):
+            if 'akshare' not in used_sources:
+                used_sources.append('akshare')
 
         return {
             "industries": industries,
             "total": len(industries),
-            "source": preferred_source  # 🔥 返回数据来源
+            "source": "+".join(used_sources) if used_sources else "database"  # 🔥 返回数据来源
         }
 
     except Exception as e:

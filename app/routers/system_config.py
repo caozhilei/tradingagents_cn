@@ -195,8 +195,9 @@ async def validate_config():
                         "env_configured": False  # 新增：环境变量是否配置
                     }
 
-                    # 某些数据源不需要 API Key（如 AKShare）
-                    if ds_config.type in ["akshare", "yahoo"]:
+                    # 某些数据源不需要 API Key（如 AKShare、TDX）
+                    # TDX（通达信）数据源不需要API Key和endpoint，直接连接服务器
+                    if ds_config.type in ["akshare", "yahoo", "tdx"]:
                         validation_item["has_api_key"] = True
                         validation_item["status"] = "已配置（无需密钥）"
                         validation_item["source"] = "builtin"
