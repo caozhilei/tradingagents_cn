@@ -2,14 +2,14 @@
 
 <div align="center">
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](#)
 [![Version](https://img.shields.io/badge/Version-v1.0.0--preview-green.svg)](./VERSION)
 [![Documentation](https://img.shields.io/badge/docs-中文文档-green.svg)](./docs/)
 
 **基于多智能体与大模型的股票分析学习平台**
 
-[快速开始](#-快速开始) • [功能特性](#-核心功能) • [部署指南](#-部署方式) • [文档中心](./docs/) • [问题反馈](https://github.com/caozhilei/tradingagents_cn/issues)
+[快速开始](#-快速开始) • [功能特性](#-核心功能) • [部署指南](#-部署方式) • [文档中心](./docs/)
 
 </div>
 
@@ -17,7 +17,7 @@
 
 ## 📖 项目简介
 
-**TradingAgents-CN** 是一个面向中文用户的**多智能体与大模型股票分析学习平台**，基于 [TradingAgents](https://github.com/TauricResearch/TradingAgents) 项目进行中文化增强和功能扩展。
+**TradingAgents-CN** 是一个面向中文用户的**多智能体与大模型股票分析学习平台**，基于 TradingAgents 项目进行中文化增强和功能扩展。
 
 > ⚠️ **重要声明**: 本平台仅用于**学习与研究**目的，不提供实盘交易指令，不构成投资建议。投资有风险，决策需谨慎。
 
@@ -94,7 +94,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/caozhilei/tradingagents_cn.git
+git clone <repository-url>
 cd tradingagents_cn
 
 # 启动服务（包含前端、后端、MongoDB、Redis）
@@ -105,7 +105,7 @@ docker-compose up -d
 # 后端API: http://localhost:8000
 ```
 
-📖 **详细文档**: [Docker 部署指南](https://mp.weixin.qq.com/s/JkA0cOu8xJnoY_3LC5oXNw)
+📖 **详细文档**: [Docker 部署指南](./docs/deployment/)
 
 ### 方式二：Windows 安装程序
 
@@ -119,7 +119,7 @@ docker-compose up -d
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/caozhilei/tradingagents_cn.git
+git clone <repository-url>
 cd tradingagents_cn
 
 # 2. 安装依赖
@@ -138,7 +138,7 @@ npm install
 npm run dev
 ```
 
-📖 **详细文档**: [源码安装手册](https://mp.weixin.qq.com/s/cqUGf-sAzcBV19gdI4sYfA)
+📖 **详细文档**: [源码安装手册](./docs/deployment/)
 
 ---
 
@@ -146,10 +146,10 @@ npm run dev
 
 | 部署方式 | 适用场景 | 难度 | 文档链接 |
 |---------|---------|------|---------|
-| 🐳 **Docker版** | 生产环境、跨平台 | ⭐⭐ 中等 | [Docker 部署指南](https://mp.weixin.qq.com/s/JkA0cOu8xJnoY_3LC5oXNw) |
+| 🐳 **Docker版** | 生产环境、跨平台 | ⭐⭐ 中等 | [Docker 部署指南](./docs/deployment/) |
 | 📦 **安装程序版** | Windows 用户、正式部署 | ⭐ 简单 | [打包指南](./docs/打包可执行应用程序指南.md) |
-| 🟢 **绿色版** | Windows 用户、快速体验 | ⭐ 简单 | [绿色版指南](https://mp.weixin.qq.com/s/eoo_HeIGxaQZVT76LBbRJQ) |
-| 💻 **源码版** | 开发者、定制需求 | ⭐⭐⭐ 较难 | [源码安装](https://mp.weixin.qq.com/s/cqUGf-sAzcBV19gdI4sYfA) |
+| 🟢 **绿色版** | Windows 用户、快速体验 | ⭐ 简单 | [部署文档](./docs/deployment/) |
+| 💻 **源码版** | 开发者、定制需求 | ⭐⭐⭐ 较难 | [源码安装](./docs/deployment/) |
 
 ⚠️ **重要提醒**: 在分析股票之前，请按相关文档要求完成股票数据同步，否则分析结果可能出现数据错误。
 
@@ -157,18 +157,13 @@ npm run dev
 
 ## 📚 使用指南
 
-### 视频教程
-
-- 📹 [v1.0.0-preview 快速入门视频](https://www.bilibili.com/video/BV1i2CeBwEP7/?vd_source=5d790a5b8d2f46d2c10fd4e770be1594)
-- 📹 [源码安装视频教程](https://www.bilibili.com/video/BV1FxCtBHEte/?vd_source=5d790a5b8d2f46d2c10fd4e770be1594)
-
 ### 文档中心
 
-- 📘 [使用指南](https://mp.weixin.qq.com/s/ppsYiBncynxlsfKFG8uEbw)
-- 🐳 [Docker Compose 部署（完全版）](https://mp.weixin.qq.com/s/JkA0cOu8xJnoY_3LC5oXNw)
-- 🔄 [从 Docker Hub 更新镜像](https://mp.weixin.qq.com/s/WKYhW8J80Watpg8K6E_dSQ)
-- 🟢 [绿色版安装和升级指南](https://mp.weixin.qq.com/s/eoo_HeIGxaQZVT76LBbRJQ)
-- ⚙️ [绿色版端口配置说明](https://mp.weixin.qq.com/s/o5QdNuh2-iKkIHzJXCj7vQ)
+- 📘 [使用指南](./docs/usage/)
+- 🐳 [Docker Compose 部署（完全版）](./docs/deployment/)
+- 🔄 [从 Docker Hub 更新镜像](./docs/deployment/)
+- 🟢 [安装和升级指南](./docs/deployment/)
+- ⚙️ [端口配置说明](./docs/configuration/)
 
 ### 配置指南
 
@@ -277,9 +272,9 @@ npm run dev
 **适用范围**: `app/`（FastAPI后端）和 `frontend/`（Vue前端）目录
 
 - ✅ **个人学习/研究**: 完全免费
-- ✅ **源代码可见**: GitHub 公开
+- ✅ **源代码可见**: 公开可见
 - ❌ **商业使用**: 需要单独许可协议
-- 📧 **商业授权**: [hsliup@163.com](mailto:hsliup@163.com)
+- 📧 **商业授权**: hsliup@163.com
 
 📖 **详细说明**: [LICENSING.md](LICENSING.md)
 
@@ -306,14 +301,12 @@ npm run dev
 
 ## 📞 联系方式
 
-- **GitHub Issues**: [提交问题和建议](https://github.com/caozhilei/tradingagents_cn/issues)
 - **邮箱**: hsliup@163.com
 - **QQ群**: 1009816091
 - **微信公众号**: TradingAgents-CN
 
   <img src="assets/wexin.png" alt="微信公众号" width="200"/>
 
-- **原项目**: [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents)
 - **文档中心**: [完整文档目录](./docs/)
 
 ---
@@ -333,7 +326,7 @@ npm run dev
 
 **🌟 如果这个项目对您有帮助，请给我们一个 Star！**
 
-[⭐ Star this repo](https://github.com/caozhilei/tradingagents_cn) | [🍴 Fork this repo](https://github.com/caozhilei/tradingagents_cn/fork) | [📖 Read the docs](./docs/)
+[📖 Read the docs](./docs/)
 
 Made with ❤️ by TradingAgents-CN Team
 
