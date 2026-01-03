@@ -35,30 +35,78 @@ db.createCollection('users');
 db.createCollection('user_sessions');
 db.createCollection('user_activities');
 
-// 股票数据
+// 股票数据（A股）
 db.createCollection('stock_basic_info');
-db.createCollection('stock_financial_data');
 db.createCollection('market_quotes');
+db.createCollection('stock_daily_quotes');
+db.createCollection('stock_financial_data');
 db.createCollection('stock_news');
+
+// 股票数据（港股）
+db.createCollection('stock_basic_info_hk');
+db.createCollection('market_quotes_hk');
+db.createCollection('stock_daily_quotes_hk');
+db.createCollection('stock_financial_data_hk');
+db.createCollection('stock_news_hk');
+
+// 股票数据（美股）
+db.createCollection('stock_basic_info_us');
+db.createCollection('market_quotes_us');
+db.createCollection('stock_daily_quotes_us');
+db.createCollection('stock_financial_data_us');
+db.createCollection('stock_news_us');
 
 // 分析相关
 db.createCollection('analysis_tasks');
+db.createCollection('analysis_results');
 db.createCollection('analysis_reports');
 db.createCollection('analysis_progress');
+db.createCollection('analysis_preferences');
+
+// 提示词模板相关
+db.createCollection('prompt_templates');
+db.createCollection('prompt_template_versions');
+db.createCollection('user_template_configs');
+
+// 工具配置相关
+db.createCollection('agent_tools');
+db.createCollection('agent_tool_configs');
+db.createCollection('tool_configs');
 
 // 筛选和收藏
 db.createCollection('screening_results');
 db.createCollection('favorites');
 db.createCollection('tags');
 
+// 工作流配置
+db.createCollection('workflow_configs');
+
 // 系统配置
 db.createCollection('system_config');
-db.createCollection('model_config');
-db.createCollection('sync_status');
-
-// 日志和统计
+db.createCollection('system_configs');
+db.createCollection('operation_logs');
 db.createCollection('system_logs');
-db.createCollection('token_usage');
+
+// 多市场统一字典
+db.createCollection('market_metadata');
+db.createCollection('industry_mapping');
+db.createCollection('symbol_registry');
+
+// 社交媒体相关
+db.createCollection('social_media_posts');
+
+// 数据源配置
+db.createCollection('data_source_configs');
+db.createCollection('data_sync_logs');
+
+// 模型目录
+db.createCollection('model_catalog');
+
+// 系统状态
+db.createCollection('system_status');
+
+// 系统通知
+db.createCollection('notifications');
 
 print('✓ 集合创建完成');
 
@@ -66,89 +114,201 @@ print('✓ 集合创建完成');
 
 print('\n创建索引...');
 
-// 用户索引
+// 用户相关索引
 db.users.createIndex({ "username": 1 }, { unique: true });
-db.users.createIndex({ "email": 1 }, { unique: true, sparse: true });
-db.users.createIndex({ "created_at": 1 });
+db.users.createIndex({ "email": 1 }, { unique: true });
 
-// 用户会话索引
-db.user_sessions.createIndex({ "session_id": 1 }, { unique: true });
 db.user_sessions.createIndex({ "user_id": 1 });
-db.user_sessions.createIndex({ "created_at": 1 }, { expireAfterSeconds: 86400 }); // 24小时过期
+db.user_sessions.createIndex({ "created_at": -1 });
+db.user_sessions.createIndex({ "expires_at": 1 }, { expireAfterSeconds: 0 });
 
-// 用户活动索引
-db.user_activities.createIndex({ "user_id": 1, "timestamp": -1 });
-db.user_activities.createIndex({ "action_type": 1, "timestamp": -1 });
+db.user_activities.createIndex({ "user_id": 1, "created_at": -1 });
 
-// 股票基础信息索引
-// 🔥 联合唯一索引：(code, source) - 允许同一股票有多个数据源
+// 股票数据索引（A股）
 db.stock_basic_info.createIndex({ "code": 1, "source": 1 }, { unique: true });
-db.stock_basic_info.createIndex({ "code": 1 });  // 非唯一索引，用于查询所有数据源
-db.stock_basic_info.createIndex({ "source": 1 });  // 数据源索引
+db.stock_basic_info.createIndex({ "code": 1 });
+db.stock_basic_info.createIndex({ "source": 1 });
 db.stock_basic_info.createIndex({ "market": 1 });
 db.stock_basic_info.createIndex({ "industry": 1 });
-db.stock_basic_info.createIndex({ "updated_at": 1 });
+db.stock_basic_info.createIndex({ "total_mv": -1 });
+db.stock_basic_info.createIndex({ "pe": 1 });
+db.stock_basic_info.createIndex({ "pb": 1 });
 
-// 股票财务数据索引
-db.stock_financial_data.createIndex({ "code": 1, "report_date": 1 });
-db.stock_financial_data.createIndex({ "updated_at": 1 });
-
-// 实时行情索引
 db.market_quotes.createIndex({ "code": 1 }, { unique: true });
-db.market_quotes.createIndex({ "updated_at": 1 });
+db.market_quotes.createIndex({ "symbol": 1, "timestamp": -1 });
+db.market_quotes.createIndex({ "pct_chg": -1 });
+db.market_quotes.createIndex({ "amount": -1 });
+db.market_quotes.createIndex({ "updated_at": -1 });
 
-// 股票新闻索引
+db.stock_daily_quotes.createIndex({ "stock_code": 1, "trade_date": -1 });
+db.stock_daily_quotes.createIndex({ "trade_date": -1 });
+db.stock_daily_quotes.createIndex({ "created_at": -1 });
+
+db.stock_financial_data.createIndex({ "stock_code": 1, "report_date": -1 });
+db.stock_financial_data.createIndex({ "report_type": 1 });
+db.stock_financial_data.createIndex({ "created_at": -1 });
+
 db.stock_news.createIndex({ "code": 1, "published_at": -1 });
 db.stock_news.createIndex({ "title": "text", "content": "text" });
 db.stock_news.createIndex({ "published_at": -1 });
 
-// 分析任务索引
+// 股票数据索引（港股）
+db.stock_basic_info_hk.createIndex({ "code": 1, "source": 1 }, { unique: true });
+db.stock_basic_info_hk.createIndex({ "code": 1 });
+db.stock_basic_info_hk.createIndex({ "source": 1 });
+db.stock_basic_info_hk.createIndex({ "market": 1 });
+db.stock_basic_info_hk.createIndex({ "industry": 1 });
+db.stock_basic_info_hk.createIndex({ "updated_at": 1 });
+
+db.market_quotes_hk.createIndex({ "code": 1 }, { unique: true });
+db.market_quotes_hk.createIndex({ "updated_at": 1 });
+
+db.stock_daily_quotes_hk.createIndex({ "code": 1, "trade_date": -1 });
+db.stock_daily_quotes_hk.createIndex({ "updated_at": 1 });
+
+db.stock_financial_data_hk.createIndex({ "code": 1, "report_date": -1 });
+db.stock_financial_data_hk.createIndex({ "updated_at": 1 });
+
+db.stock_news_hk.createIndex({ "code": 1, "published_at": -1 });
+
+// 股票数据索引（美股）
+db.stock_basic_info_us.createIndex({ "code": 1, "source": 1 }, { unique: true });
+db.stock_basic_info_us.createIndex({ "code": 1 });
+db.stock_basic_info_us.createIndex({ "source": 1 });
+db.stock_basic_info_us.createIndex({ "market": 1 });
+db.stock_basic_info_us.createIndex({ "industry": 1 });
+db.stock_basic_info_us.createIndex({ "sector": 1 });
+db.stock_basic_info_us.createIndex({ "updated_at": 1 });
+
+db.market_quotes_us.createIndex({ "code": 1 }, { unique: true });
+db.market_quotes_us.createIndex({ "updated_at": 1 });
+
+db.stock_daily_quotes_us.createIndex({ "code": 1, "trade_date": -1 });
+db.stock_daily_quotes_us.createIndex({ "updated_at": 1 });
+
+db.stock_financial_data_us.createIndex({ "code": 1, "report_date": -1 });
+db.stock_financial_data_us.createIndex({ "updated_at": 1 });
+
+db.stock_news_us.createIndex({ "code": 1, "published_at": -1 });
+
+// 分析相关索引
 db.analysis_tasks.createIndex({ "task_id": 1 }, { unique: true });
 db.analysis_tasks.createIndex({ "user_id": 1, "created_at": -1 });
 db.analysis_tasks.createIndex({ "status": 1, "created_at": -1 });
 db.analysis_tasks.createIndex({ "symbol": 1, "created_at": -1 });
+db.analysis_tasks.createIndex({ "analysis_date": 1 });
 
-// 分析报告索引
+db.analysis_results.createIndex({ "analysis_id": 1 }, { unique: true });
+db.analysis_results.createIndex({ "stock_code": 1 });
+db.analysis_results.createIndex({ "analysis_date": 1 });
+db.analysis_results.createIndex({ "created_at": -1 });
+
 db.analysis_reports.createIndex({ "task_id": 1 });
 db.analysis_reports.createIndex({ "symbol": 1, "created_at": -1 });
 db.analysis_reports.createIndex({ "user_id": 1, "created_at": -1 });
 db.analysis_reports.createIndex({ "market_type": 1, "created_at": -1 });
 db.analysis_reports.createIndex({ "created_at": -1 });
 
-// 分析进度索引
 db.analysis_progress.createIndex({ "task_id": 1 }, { unique: true });
-db.analysis_progress.createIndex({ "updated_at": 1 }, { expireAfterSeconds: 3600 }); // 1小时过期
+db.analysis_progress.createIndex({ "updated_at": 1 }, { expireAfterSeconds: 3600 });
 
-// 筛选结果索引
+// 提示词模板相关索引
+db.prompt_templates.createIndex({ "agent_type": 1, "template_name": 1 });
+db.prompt_templates.createIndex({ "agent_type": 1, "is_default": 1 });
+db.prompt_templates.createIndex({ "is_system": 1 });
+db.prompt_templates.createIndex({ "created_by": 1 });
+db.prompt_templates.createIndex({ "is_active": 1 });
+
+db.prompt_template_versions.createIndex({ "template_id": 1, "version": 1 });
+
+db.user_template_configs.createIndex({ "user_id": 1, "agent_type": 1 }, { unique: true });
+db.user_template_configs.createIndex({ "template_id": 1 });
+
+// 工具配置相关索引
+db.agent_tools.createIndex({ "agent_type": 1, "is_active": 1 });
+db.agent_tools.createIndex({ "tool_name": 1 });
+db.agent_tools.createIndex({ "tool_category": 1 });
+db.agent_tools.createIndex({ "is_system": 1 });
+db.agent_tools.createIndex({ "is_default": 1 });
+
+db.agent_tool_configs.createIndex({ "user_id": 1, "agent_type": 1 }, { unique: true });
+db.agent_tool_configs.createIndex({ "tool_ids": 1 });
+
+db.tool_configs.createIndex({ "tool_name": 1 }, { unique: true });
+db.tool_configs.createIndex({ "category": 1 });
+db.tool_configs.createIndex({ "tool_type": 1 });
+db.tool_configs.createIndex({ "enabled": 1 });
+db.tool_configs.createIndex({ "is_system": 1 });
+
+// 筛选和收藏索引
 db.screening_results.createIndex({ "user_id": 1, "created_at": -1 });
 db.screening_results.createIndex({ "created_at": -1 });
 
-// 收藏索引
 db.favorites.createIndex({ "user_id": 1, "symbol": 1 }, { unique: true });
 db.favorites.createIndex({ "user_id": 1, "created_at": -1 });
 
-// 标签索引
 db.tags.createIndex({ "user_id": 1, "name": 1 }, { unique: true });
 db.tags.createIndex({ "user_id": 1 });
+
+// 工作流配置索引
+db.workflow_configs.createIndex({ "name": 1 }, { unique: true });
+db.workflow_configs.createIndex({ "metadata.created_at": -1 });
+db.workflow_configs.createIndex({ "metadata.author": 1 });
 
 // 系统配置索引
 db.system_config.createIndex({ "key": 1 }, { unique: true });
 
-// 模型配置索引
-db.model_config.createIndex({ "provider": 1, "model_name": 1 }, { unique: true });
+db.system_configs.createIndex({ "version": 1 });
+db.system_configs.createIndex({ "is_active": 1 });
 
-// 同步状态索引
-db.sync_status.createIndex({ "data_type": 1 }, { unique: true });
-db.sync_status.createIndex({ "last_sync_at": 1 });
+db.operation_logs.createIndex({ "user_id": 1 });
+db.operation_logs.createIndex({ "action": 1 });
+db.operation_logs.createIndex({ "created_at": -1 });
 
-// 系统日志索引
 db.system_logs.createIndex({ "level": 1, "timestamp": -1 });
-db.system_logs.createIndex({ "timestamp": -1 }, { expireAfterSeconds: 604800 }); // 7天过期
+db.system_logs.createIndex({ "timestamp": -1 }, { expireAfterSeconds: 604800 });
 
-// Token使用统计索引
-db.token_usage.createIndex({ "user_id": 1, "timestamp": -1 });
-db.token_usage.createIndex({ "model": 1, "timestamp": -1 });
-db.token_usage.createIndex({ "timestamp": -1 });
+// 多市场统一字典索引
+db.market_metadata.createIndex({ "market_type": 1 });
+db.market_metadata.createIndex({ "exchange_code": 1 });
+
+db.industry_mapping.createIndex({ "source_industry": 1, "source_type": 1 });
+db.industry_mapping.createIndex({ "target_industry": 1 });
+
+db.symbol_registry.createIndex({ "symbol": 1, "market": 1 }, { unique: true });
+db.symbol_registry.createIndex({ "code": 1 });
+
+// 社交媒体相关索引
+db.social_media_posts.createIndex({ "platform": 1, "verified": 1, "created_at": -1 });
+db.social_media_posts.createIndex({ "hashtags": 1 });
+db.social_media_posts.createIndex({ "keywords": 1 });
+db.social_media_posts.createIndex({ "topics": 1 });
+db.social_media_posts.createIndex({ "data_source": 1 });
+
+// 数据源配置索引
+db.data_source_configs.createIndex({ "source_name": 1 }, { unique: true });
+db.data_source_configs.createIndex({ "source_type": 1 });
+db.data_source_configs.createIndex({ "status": 1 });
+
+db.data_sync_logs.createIndex({ "source_name": 1, "created_at": -1 });
+db.data_sync_logs.createIndex({ "status": 1 });
+
+// 模型目录索引
+db.model_catalog.createIndex({ "provider": 1 });
+db.model_catalog.createIndex({ "model_name": 1, "provider": 1 }, { unique: true });
+
+// 系统状态索引
+db.system_status.createIndex({ "component": 1 });
+db.system_status.createIndex({ "created_at": -1 });
+
+// 分析偏好索引
+db.analysis_preferences.createIndex({ "name": 1 });
+db.analysis_preferences.createIndex({ "category": 1 });
+
+// 系统通知索引
+db.notifications.createIndex({ "user_id": 1 });
+db.notifications.createIndex({ "is_read": 1 });
+db.notifications.createIndex({ "created_at": -1 });
 
 print('✓ 索引创建完成');
 

@@ -48,8 +48,12 @@ services:
       API_PORT: "8000"
       # CORS配置
       CORS_ORIGINS: "http://localhost:3000,http://localhost:8080,http://localhost:5173"
-    # 不使用depends_on，因为MongoDB和Redis是外部服务
-    # 后端服务将直接连接到已运行的MongoDB和Redis容器
+    # 后端服务依赖于MongoDB和Redis服务
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - tradingagents-network
     healthcheck:
@@ -103,12 +107,49 @@ services:
         max-file: "3"
 
   # MongoDB 数据库服务
-  # 使用外部已存在的 MongoDB 容器
-  # 注意：不使用 services.mongodb 配置，直接在后端环境变量中指定连接地址
+  mongodb:
+    image: mongo:7.0.11
+    container_name: tradingagents-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: tradingagents123
+      MONGO_INITDB_DATABASE: tradingagents
+      TZ: "Asia/Shanghai"
+    networks:
+      - tradingagents-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # Redis 缓存服务
-  # 使用外部已存在的 Redis 容器
-  # 注意：不使用 services.redis 配置，直接在后端环境变量中指定连接地址
+  redis:
+    image: redis:7.2.5
+    container_name: tradingagents-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --requirepass tradingagents123 --appendonly yes --appendfsync everysec
+    environment:
+      TZ: "Asia/Shanghai"
+    networks:
+      - tradingagents-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "tradingagents123", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # Redis Commander 管理界面（可选）
   redis-commander:
@@ -121,7 +162,9 @@ services:
       - REDIS_HOSTS=local:redis:6379:0:tradingagents123
     networks:
       - tradingagents-network
-    # 不使用depends_on，因为Redis是外部服务
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081"]
       interval: 30s
@@ -146,7 +189,9 @@ services:
       ME_CONFIG_BASICAUTH_PASSWORD: tradingagents123
     networks:
       - tradingagents-network
-    # 不使用depends_on，因为MongoDB是外部服务
+    depends_on:
+      mongodb:
+        condition: service_healthy
     profiles:
       - management
 
