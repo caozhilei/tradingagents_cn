@@ -8,6 +8,7 @@
 import logging
 from datetime import datetime
 import re
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,8 @@ class UnifiedNewsAnalyzer:
             result = self._get_a_share_news(stock_code, max_news, model_info, current_date)
         elif stock_type == "港股":
             result = self._get_hk_share_news(stock_code, max_news, model_info, current_date)
+        elif stock_type == "数字货币":
+            result = self._get_crypto_news(stock_code, max_news, model_info, current_date)
         elif stock_type == "美股":
             result = self._get_us_share_news(stock_code, max_news, model_info, current_date)
         else:
@@ -82,6 +85,16 @@ class UnifiedNewsAnalyzer:
             return "港股"
         elif re.match(r'^\d{4,5}$', stock_code) and len(stock_code) <= 5:
             return "港股"
+        
+        # 数字货币判断（优先于美股，因为BTC等数字货币代码也匹配美股格式）
+        crypto_codes = {
+            'BTC', 'ETH', 'DOGE', 'USDT', 'BNB', 'ADA', 'SOL', 'DOT', 'AVAX', 'LINK',
+            'UNI', 'ALGO', 'VET', 'ICP', 'FIL', 'TRX', 'ETC', 'XLM', 'THETA', 'HBAR',
+            'NEAR', 'FLOW', 'MANA', 'SAND', 'AXS', 'GALA', 'ENJ', 'BAT', 'CHZ', 'GAL',
+            'YGG', 'APE', 'LRC', 'ENS', 'LOOKS', 'BEAN', 'PEPE', 'SHIB', 'FLOKI'
+        }
+        if stock_code in crypto_codes:
+            return "数字货币"
         
         # 美股判断
         elif re.match(r'^[A-Z]{1,5}$', stock_code):
@@ -441,6 +454,217 @@ class UnifiedNewsAnalyzer:
         
         return "❌ 无法获取港股新闻数据，所有新闻源均不可用"
     
+    def _get_crypto_news(self, stock_code: str, max_news: int, model_info: str = "", current_date: str = None) -> str:
+        """获取数字货币新闻（多源聚合）"""
+        logger.info(f"[统一新闻工具] 获取数字货币 {stock_code} 新闻（多源聚合）")
+        
+        # 获取当前日期（如果没有指定分析时间点，使用当前日期）
+        if current_date:
+            curr_date = current_date
+        else:
+            curr_date = datetime.now().strftime("%Y-%m-%d")
+        
+        # 数字货币名称映射（中英文）
+        crypto_names_en = {
+            'BTC': 'bitcoin',
+            'ETH': 'ethereum',
+            'DOGE': 'dogecoin',
+            'USDT': 'tether',
+            'BNB': 'binance coin',
+            'ADA': 'cardano',
+            'SOL': 'solana',
+            'DOT': 'polkadot',
+            'AVAX': 'avalanche',
+            'LINK': 'chainlink',
+            'UNI': 'uniswap',
+            'ALGO': 'algorand',
+            'VET': 'vechain',
+            'ICP': 'internet computer',
+            'FIL': 'filecoin',
+            'TRX': 'tron',
+            'ETC': 'ethereum classic',
+            'XLM': 'stellar',
+            'THETA': 'theta',
+            'HBAR': 'hedera',
+            'NEAR': 'near protocol',
+            'FLOW': 'flow',
+            'MANA': 'decentraland',
+            'SAND': 'sandbox',
+            'AXS': 'axie infinity',
+            'GALA': 'gala',
+            'ENJ': 'enjin',
+            'BAT': 'basic attention token',
+            'CHZ': 'chiliz',
+            'GAL': 'galxe',
+            'YGG': 'yield guild games',
+            'APE': 'apecoin',
+            'LRC': 'loopring',
+            'ENS': 'ethereum name service',
+            'LOOKS': 'looksrare',
+            'BEAN': 'bean',
+            'PEPE': 'pepe',
+            'SHIB': 'shiba inu',
+            'FLOKI': 'floki'
+        }
+        
+        crypto_names_cn = {
+            'BTC': '比特币',
+            'ETH': '以太坊',
+            'DOGE': '狗狗币',
+            'USDT': '泰达币',
+            'BNB': '币安币',
+            'ADA': '艾达币',
+            'SOL': '索拉纳',
+            'DOT': '波卡',
+            'AVAX': '雪崩',
+            'LINK': 'Chainlink'
+        }
+        
+        crypto_code = stock_code.upper()
+        crypto_name_en = crypto_names_en.get(crypto_code, crypto_code.lower())
+        crypto_name_cn = crypto_names_cn.get(crypto_code, crypto_code)
+        
+        # ========== 优先级1: Google News ==========
+        try:
+            if hasattr(self.toolkit, 'get_google_news'):
+                logger.info(f"[统一新闻工具] 🥇 优先级1: 尝试Google数字货币新闻...")
+                # 构建搜索查询（中英文混合，提高搜索覆盖率）
+                query = f"{crypto_code} {crypto_name_en} cryptocurrency news"
+                logger.info(f"[统一新闻工具] Google搜索查询: {query}")
+                
+                result = self.toolkit.get_google_news.invoke({
+                    "query": query,
+                    "curr_date": curr_date,
+                    "look_back_days": 7  # 回溯7天
+                })
+                
+                if result and len(result.strip()) > 100:
+                    logger.info(f"[统一新闻工具] ✅ Google数字货币新闻获取成功: {len(result)} 字符")
+                    return self._format_news_result(result, f"Google数字货币新闻({crypto_name_cn})", model_info)
+                else:
+                    logger.warning(f"[统一新闻工具] ⚠️ Google数字货币新闻内容过短或为空: {len(result) if result else 0} 字符")
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] Google数字货币新闻获取失败: {e}")
+        
+        # ========== 优先级2: OpenAI 全球新闻 ==========
+        try:
+            if hasattr(self.toolkit, 'get_global_news_openai'):
+                logger.info(f"[统一新闻工具] 🥈 优先级2: 尝试OpenAI全球新闻...")
+                result = self.toolkit.get_global_news_openai.invoke({"curr_date": curr_date})
+                
+                if result and len(result.strip()) > 100:
+                    # 检查是否包含数字货币相关内容
+                    crypto_keywords = [crypto_code, crypto_name_en, 'cryptocurrency', 'bitcoin', 'ethereum', 'crypto']
+                    if any(keyword.lower() in result.lower() for keyword in crypto_keywords):
+                        logger.info(f"[统一新闻工具] ✅ OpenAI全球新闻包含数字货币内容: {len(result)} 字符")
+                        return self._format_news_result(result, f"OpenAI全球新闻({crypto_name_cn})", model_info)
+                    else:
+                        logger.info(f"[统一新闻工具] ⚠️ OpenAI全球新闻未包含数字货币相关内容")
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] OpenAI全球新闻获取失败: {e}")
+        
+        # ========== 优先级3: NewsAPI（如果配置了） ==========
+        try:
+            newsapi_key = os.getenv('NEWSAPI_KEY')
+            if newsapi_key:
+                logger.info(f"[统一新闻工具] 🥉 优先级3: 尝试NewsAPI数字货币新闻...")
+                
+                import requests
+                from datetime import timedelta
+                from zoneinfo import ZoneInfo
+                from tradingagents.utils.timezone_utils import get_timezone_name
+                
+                # 构建搜索查询
+                query = f"{crypto_code} OR {crypto_name_en} OR cryptocurrency"
+                
+                # 计算时间范围（回溯7天）
+                end_time = datetime.now(ZoneInfo(get_timezone_name()))
+                start_time = end_time - timedelta(days=7)
+                
+                url = "https://newsapi.org/v2/everything"
+                params = {
+                    'q': query,
+                    'language': 'en',
+                    'sortBy': 'publishedAt',
+                    'from': start_time.isoformat(),
+                    'to': end_time.isoformat(),
+                    'pageSize': min(max_news, 20),  # NewsAPI免费版限制
+                    'apiKey': newsapi_key
+                }
+                
+                headers = {
+                    'User-Agent': 'TradingAgents-CN/1.0'
+                }
+                
+                response = requests.get(url, params=params, headers=headers, timeout=10)
+                response.raise_for_status()
+                
+                data = response.json()
+                articles = data.get('articles', [])
+                
+                if articles:
+                    # 格式化NewsAPI返回的新闻
+                    news_str = f"## {crypto_name_cn} ({crypto_code}) NewsAPI 新闻\n\n"
+                    for i, article in enumerate(articles[:max_news], 1):
+                        title = article.get('title', '无标题')
+                        description = article.get('description', '')
+                        source = article.get('source', {}).get('name', '未知来源')
+                        url = article.get('url', '')
+                        published = article.get('publishedAt', '')
+                        
+                        news_str += f"### {i}. {title}\n\n"
+                        news_str += f"**来源**: {source} | **时间**: {published}\n\n"
+                        if description:
+                            news_str += f"{description}\n\n"
+                        if url:
+                            news_str += f"**链接**: {url}\n\n"
+                        news_str += "---\n\n"
+                    
+                    logger.info(f"[统一新闻工具] ✅ NewsAPI数字货币新闻获取成功: {len(articles)} 条")
+                    return self._format_news_result(news_str, f"NewsAPI数字货币新闻({crypto_name_cn})", model_info)
+                else:
+                    logger.info(f"[统一新闻工具] ⚠️ NewsAPI未返回新闻")
+            else:
+                logger.info(f"[统一新闻工具] ℹ️ NewsAPI密钥未配置，跳过此新闻源")
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] NewsAPI数字货币新闻获取失败: {e}")
+        
+        # ========== 优先级4: Reddit（社区讨论） ==========
+        try:
+            if hasattr(self.toolkit, 'get_reddit_stock_info'):
+                logger.info(f"[统一新闻工具] 🏅 优先级4: 尝试Reddit数字货币讨论...")
+                
+                # Reddit搜索数字货币相关讨论
+                result = self.toolkit.get_reddit_stock_info.invoke({
+                    "ticker": crypto_code,
+                    "curr_date": curr_date
+                })
+                
+                if result and len(result.strip()) > 100:
+                    logger.info(f"[统一新闻工具] ✅ Reddit数字货币讨论获取成功: {len(result)} 字符")
+                    return self._format_news_result(result, f"Reddit数字货币讨论({crypto_name_cn})", model_info)
+        except Exception as e:
+            logger.warning(f"[统一新闻工具] Reddit数字货币讨论获取失败: {e}")
+
+        # ========== 所有数据源均失败 ==========
+        logger.error(f"[统一新闻工具] ❌ 所有数字货币新闻源均不可用")
+        return f"""## 📰 {crypto_name_cn} ({crypto_code}) 新闻分析
+
+**状态**：❌ 无法获取数字货币新闻数据
+
+**尝试的数据源**：
+1. ❌ Google News
+2. ❌ OpenAI 全球新闻
+3. ❌ NewsAPI（{'已配置' if os.getenv('NEWSAPI_KEY') else '未配置'}）
+4. ❌ Reddit
+
+**建议**：
+1. 检查网络连接
+2. 如果使用NewsAPI，请确保已配置 `NEWSAPI_KEY` 环境变量
+3. 稍后重试
+
+**数据来源**：多源聚合（Google News、OpenAI、NewsAPI、Reddit）"""
+    
     def _get_us_share_news(self, stock_code: str, max_news: int, model_info: str = "", current_date: str = None) -> str:
         """获取美股新闻"""
         logger.info(f"[统一新闻工具] 获取美股 {stock_code} 新闻")
@@ -493,10 +717,13 @@ class UnifiedNewsAnalyzer:
     def _format_news_result(self, news_content: str, source: str, model_info: str = "") -> str:
         """格式化新闻结果"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # 🔍 添加调试日志：打印原始新闻内容
-        logger.info(f"[统一新闻工具] 📋 原始新闻内容预览 (前500字符): {news_content[:500]}")
-        logger.info(f"[统一新闻工具] 📊 原始内容长度: {len(news_content)} 字符")
+
+        # 🔍 清理HTML标签（特别是<em>标签）
+        news_content = self._clean_html_tags(news_content)
+
+        # 🔍 添加调试日志：打印清理后的新闻内容
+        logger.info(f"[统一新闻工具] 📋 清理后新闻内容预览 (前500字符): {news_content[:500]}")
+        logger.info(f"[统一新闻工具] 📊 清理后内容长度: {len(news_content)} 字符")
         
         # 检测是否为Google/Gemini模型
         is_google_model = any(keyword in model_info.lower() for keyword in ['google', 'gemini', 'gemma'])
@@ -581,6 +808,24 @@ class UnifiedNewsAnalyzer:
 时间戳: {timestamp}
 """
         return formatted_result.strip()
+
+    def _clean_html_tags(self, text: str) -> str:
+        """清理HTML标签，特别是<em>标签"""
+        import re
+
+        if not text:
+            return text
+
+        # 移除 <em> 和 </em> 标签（只移除标签，不移除内容）
+        text = re.sub(r'</?em[^>]*>', '', text, flags=re.IGNORECASE)
+
+        # 移除其他常见的HTML标签
+        text = re.sub(r'<[^>]+>', '', text)
+
+        # 清理多余的空白字符
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        return text
 
 
 def create_unified_news_tool(toolkit):

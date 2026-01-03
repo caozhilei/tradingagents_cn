@@ -10,6 +10,7 @@ from .base import DataSourceAdapter
 from .tushare_adapter import TushareAdapter
 from .akshare_adapter import AKShareAdapter
 from .baostock_adapter import BaoStockAdapter
+from .mcp_adapter import MCPAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class DataSourceManager:
             AKShareAdapter(),
             TushareAdapter(),
             BaoStockAdapter(),
+            MCPAdapter(),
         ]
         
         # 添加TDX适配器（如果可用）

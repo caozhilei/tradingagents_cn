@@ -84,6 +84,54 @@ def _get_company_name(ticker: str, market_info: dict) -> str:
             logger.debug(f"📊 [DEBUG] 美股名称映射: {ticker} -> {company_name}")
             return company_name
 
+        elif market_info.get('is_crypto', False):
+            # 数字货币：使用友好名称映射
+            crypto_names = {
+                'BTC': '比特币',
+                'ETH': '以太坊',
+                'DOGE': '狗狗币',
+                'USDT': '泰达币',
+                'BNB': '币安币',
+                'ADA': '艾达币',
+                'SOL': '索拉纳',
+                'DOT': '波卡',
+                'AVAX': '雪崩',
+                'LINK': 'Chainlink',
+                'UNI': 'Uniswap',
+                'ALGO': 'Algorand',
+                'VET': '唯链',
+                'ICP': '互联网计算机',
+                'FIL': 'Filecoin',
+                'TRX': '波场',
+                'ETC': '以太经典',
+                'XLM': '恒星币',
+                'THETA': 'Theta',
+                'HBAR': 'Hedera',
+                'NEAR': 'Near',
+                'FLOW': 'Flow',
+                'MANA': 'Decentraland',
+                'SAND': 'The Sandbox',
+                'AXS': 'Axie Infinity',
+                'GALA': 'Gala Games',
+                'ENJ': 'Enjin Coin',
+                'BAT': 'Basic Attention Token',
+                'CHZ': 'Chiliz',
+                'GAL': 'Galxe',
+                'YGG': 'Yield Guild Games',
+                'APE': 'ApeCoin',
+                'LRC': 'Loopring',
+                'ENS': 'Ethereum Name Service',
+                'LOOKS': 'LooksRare',
+                'BEAN': 'Bean',
+                'PEPE': 'Pepe',
+                'SHIB': 'Shiba Inu',
+                'FLOKI': 'Floki'
+            }
+
+            company_name = crypto_names.get(ticker.upper(), f"数字货币{ticker}")
+            logger.debug(f"📊 [DEBUG] 数字货币名称映射: {ticker} -> {company_name}")
+            return company_name
+
         else:
             return f"股票{ticker}"
 
@@ -115,6 +163,43 @@ def create_market_analyst(llm, toolkit):
         market_info = StockUtils.get_market_info(ticker)
 
         logger.debug(f"📈 [DEBUG] 股票类型检查: {ticker} -> {market_info['market_name']} ({market_info['currency_name']})")
+
+        # 特殊处理数字货币：直接调用工具并返回结果
+        if market_info.get('is_crypto', False):
+            logger.info(f"₿ [市场分析师] 检测到数字货币 {ticker}，直接返回工具数据")
+            try:
+                # 调用数字货币工具
+                tool = toolkit.get_stock_market_data_unified
+                crypto_data = tool.invoke({
+                    'ticker': ticker,
+                    'start_date': current_date,
+                    'end_date': current_date
+                })
+
+                # 提取数字货币市场数据部分
+                if "## 数字货币市场数据" in crypto_data:
+                    market_data = crypto_data.split("## 数字货币市场数据")[1].split("---")[0].strip()
+                    logger.info(f"✅ [市场分析师] 成功提取数字货币数据，长度: {len(market_data)}")
+                    return {
+                        "messages": state["messages"],
+                        "market_report": market_data,
+                        "market_tool_call_count": tool_call_count + 1
+                    }
+                else:
+                    logger.warning(f"⚠️ [市场分析师] 未找到数字货币数据标记，返回完整数据")
+                    return {
+                        "messages": state["messages"],
+                        "market_report": crypto_data,
+                        "market_tool_call_count": tool_call_count + 1
+                    }
+
+            except Exception as e:
+                logger.error(f"❌ [市场分析师] 数字货币数据获取失败: {e}")
+                return {
+                    "messages": state["messages"],
+                    "market_report": f"数字货币{ticker}数据获取失败: {e}",
+                    "market_tool_call_count": tool_call_count + 1
+                }
 
         # 获取公司名称
         company_name = _get_company_name(ticker, market_info)
@@ -165,6 +250,12 @@ def create_market_analyst(llm, toolkit):
                     "\n"
                     "📝 **输出格式要求（必须严格遵守）：**\n"
                     "\n"
+                    "**重要：对于数字货币，直接使用工具返回的格式化数据，不要修改基本信息部分。**\n"
+                    "\n"
+                    "**数字货币输出格式：**\n"
+                    "[直接复制工具返回的完整数据，包括基本信息和技术指标]\n"
+                    "\n"
+                    "**其他市场输出格式：**\n"
                     "## 📊 股票基本信息\n"
                     "- 公司名称：{company_name}\n"
                     "- 股票代码：{ticker}\n"
@@ -327,12 +418,8 @@ def create_market_analyst(llm, toolkit):
 
                             if current_tool_name == tool_name:
                                 try:
-                                    if tool_name == "get_china_stock_data":
-                                        # 中国股票数据工具
-                                        tool_result = tool.invoke(tool_args)
-                                    else:
-                                        # 其他工具
-                                        tool_result = tool.invoke(tool_args)
+                                    # 执行工具
+                                    tool_result = tool.invoke(tool_args)
                                     logger.debug(f"📊 [DEBUG] 工具执行成功，结果长度: {len(str(tool_result))}")
                                     break
                                 except Exception as tool_error:

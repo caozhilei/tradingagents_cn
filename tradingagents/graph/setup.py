@@ -49,7 +49,7 @@ class GraphSetup:
         self.react_llm = react_llm
 
     def setup_graph(
-        self, selected_analysts=["market", "social", "news", "fundamentals"]
+        self, selected_analysts=["market_analyst", "social_media_analyst", "news_analyst", "fundamentals_analyst"]
     ):
         """Set up and compile the agent workflow graph.
 
@@ -179,16 +179,48 @@ class GraphSetup:
 
         # Define edges
         # Start with the first analyst
-        first_analyst = selected_analysts[0]
-        workflow.add_edge(START, f"{first_analyst.capitalize()} Analyst")
+        first_analyst_type = selected_analysts[0]
+        # 从完整形式转换为显示名称
+        if first_analyst_type == "market_analyst":
+            first_analyst = "Market Analyst"
+        elif first_analyst_type == "fundamentals_analyst":
+            first_analyst = "Fundamentals Analyst"
+        elif first_analyst_type == "news_analyst":
+            first_analyst = "News Analyst"
+        elif first_analyst_type == "social_media_analyst":
+            first_analyst = "Social Media Analyst"
+        else:
+            short_type = first_analyst_type.replace("_analyst", "").replace("social_media", "social")
+            first_analyst = f"{short_type.capitalize()} Analyst"
+        workflow.add_edge(START, first_analyst)
 
         # Connect analysts in sequence
         for i, analyst_type in enumerate(selected_analysts):
-            current_analyst = f"{analyst_type.capitalize()} Analyst"
-            current_tools = f"tools_{analyst_type}"
-            current_clear = f"Msg Clear {analyst_type.capitalize()}"
+            # 从完整形式转换为显示名称
+            if analyst_type == "market_analyst":
+                current_analyst = "Market Analyst"
+                current_tools = "tools_market"
+                current_clear = "Msg Clear Market"
+            elif analyst_type == "fundamentals_analyst":
+                current_analyst = "Fundamentals Analyst"
+                current_tools = "tools_fundamentals"
+                current_clear = "Msg Clear Fundamentals"
+            elif analyst_type == "news_analyst":
+                current_analyst = "News Analyst"
+                current_tools = "tools_news"
+                current_clear = "Msg Clear News"
+            elif analyst_type == "social_media_analyst":
+                current_analyst = "Social Media Analyst"
+                current_tools = "tools_social"
+                current_clear = "Msg Clear Social"
+            else:
+                # 默认处理
+                short_type = analyst_type.replace("_analyst", "").replace("social_media", "social")
+                current_analyst = f"{short_type.capitalize()} Analyst"
+                current_tools = f"tools_{short_type}"
+                current_clear = f"Msg Clear {short_type.capitalize()}"
 
-            # Add conditional edges for current analyst
+            # Add conditional edges for current analyst（条件函数名使用完整形式）
             workflow.add_conditional_edges(
                 current_analyst,
                 getattr(self.conditional_logic, f"should_continue_{analyst_type}"),
@@ -198,7 +230,19 @@ class GraphSetup:
 
             # Connect to next analyst or to Bull Researcher if this is the last analyst
             if i < len(selected_analysts) - 1:
-                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
+                next_analyst_type = selected_analysts[i+1]
+                # 从完整形式转换为显示名称
+                if next_analyst_type == "market_analyst":
+                    next_analyst = "Market Analyst"
+                elif next_analyst_type == "fundamentals_analyst":
+                    next_analyst = "Fundamentals Analyst"
+                elif next_analyst_type == "news_analyst":
+                    next_analyst = "News Analyst"
+                elif next_analyst_type == "social_media_analyst":
+                    next_analyst = "Social Media Analyst"
+                else:
+                    short_type = next_analyst_type.replace("_analyst", "").replace("social_media", "social")
+                    next_analyst = f"{short_type.capitalize()} Analyst"
                 workflow.add_edge(current_clear, next_analyst)
             else:
                 workflow.add_edge(current_clear, "Bull Researcher")
@@ -251,3 +295,18 @@ class GraphSetup:
 
         # Compile and return
         return workflow.compile()
+    
+    def setup_graph_from_config(self, workflow_config):
+        """
+        基于配置构建图（新方法，支持配置驱动）
+        
+        Args:
+            workflow_config: WorkflowConfig对象
+            
+        Returns:
+            编译后的LangGraph实例
+        """
+        from .config_based_builder import ConfigBasedGraphBuilder
+        
+        builder = ConfigBasedGraphBuilder(self)
+        return builder.build_graph(workflow_config)

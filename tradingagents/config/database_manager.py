@@ -47,21 +47,67 @@ class DatabaseManager:
         self.mongodb_enabled = parse_bool_env("MONGODB_ENABLED", False)
         self.redis_enabled = parse_bool_env("REDIS_ENABLED", False)
 
-        # 从环境变量读取MongoDB配置
-        self.mongodb_config = {
-            "enabled": self.mongodb_enabled,
-            "host": os.getenv("MONGODB_HOST", "localhost"),
-            "port": int(os.getenv("MONGODB_PORT", "27017")),
-            "username": os.getenv("MONGODB_USERNAME"),
-            "password": os.getenv("MONGODB_PASSWORD"),
-            "database": os.getenv("MONGODB_DATABASE", "tradingagents"),
-            "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin"),
-            "timeout": 2000,
-            # MongoDB超时参数（毫秒）- 用于处理大量历史数据
-            "connect_timeout": int(os.getenv("MONGO_CONNECT_TIMEOUT_MS", "30000")),
-            "socket_timeout": int(os.getenv("MONGO_SOCKET_TIMEOUT_MS", "60000")),
-            "server_selection_timeout": int(os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000"))
-        }
+        # 🔥 优先使用 MONGODB_CONNECTION_STRING，如果存在则解析它
+        connection_string = os.getenv("MONGODB_CONNECTION_STRING")
+        if connection_string:
+            self.logger.info("🔍 检测到 MONGODB_CONNECTION_STRING，将使用连接字符串方式")
+            # 解析连接字符串
+            from urllib.parse import urlparse, parse_qs
+            try:
+                parsed = urlparse(connection_string)
+                
+                # 提取数据库名（从路径或查询参数）
+                database = parsed.path.strip('/') if parsed.path.strip('/') else "tradingagents"
+                
+                # 从查询参数提取 authSource
+                query_params = parse_qs(parsed.query)
+                auth_source = query_params.get('authSource', ['admin'])[0]
+                
+                # 提取用户名和密码
+                username = parsed.username
+                password = parsed.password
+                
+                # 提取主机和端口
+                host = parsed.hostname or "localhost"
+                port = parsed.port or 27017
+                
+                self.mongodb_config = {
+                    "enabled": self.mongodb_enabled,
+                    "connection_string": connection_string,  # 保存原始连接字符串
+                    "host": host,
+                    "port": port,
+                    "username": username,
+                    "password": password,
+                    "database": database,
+                    "auth_source": auth_source,
+                    "timeout": 2000,
+                    "connect_timeout": int(os.getenv("MONGO_CONNECT_TIMEOUT_MS", "30000")),
+                    "socket_timeout": int(os.getenv("MONGO_SOCKET_TIMEOUT_MS", "60000")),
+                    "server_selection_timeout": int(os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000"))
+                }
+                self.logger.info(f"✅ 已解析 MONGODB_CONNECTION_STRING: {host}:{port}/{database} (authSource: {auth_source})")
+            except Exception as e:
+                self.logger.warning(f"⚠️ 解析 MONGODB_CONNECTION_STRING 失败: {e}，将使用分离配置项")
+                # 降级到分离配置项
+                connection_string = None
+        
+        # 如果没有连接字符串，使用分离的配置项
+        if not connection_string:
+            self.mongodb_config = {
+                "enabled": self.mongodb_enabled,
+                "connection_string": None,
+                "host": os.getenv("MONGODB_HOST", "localhost"),
+                "port": int(os.getenv("MONGODB_PORT", "27017")),
+                "username": os.getenv("MONGODB_USERNAME"),
+                "password": os.getenv("MONGODB_PASSWORD"),
+                "database": os.getenv("MONGODB_DATABASE", "tradingagents"),
+                "auth_source": os.getenv("MONGODB_AUTH_SOURCE", "admin"),
+                "timeout": 2000,
+                # MongoDB超时参数（毫秒）- 用于处理大量历史数据
+                "connect_timeout": int(os.getenv("MONGO_CONNECT_TIMEOUT_MS", "30000")),
+                "socket_timeout": int(os.getenv("MONGO_SOCKET_TIMEOUT_MS", "60000")),
+                "server_selection_timeout": int(os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000"))
+            }
 
         # 从环境变量读取Redis配置
         self.redis_config = {
@@ -92,6 +138,23 @@ class DatabaseManager:
             import pymongo
             from pymongo import MongoClient
 
+            # 🔥 优先使用连接字符串
+            if self.mongodb_config.get("connection_string"):
+                try:
+                    client = MongoClient(
+                        self.mongodb_config["connection_string"],
+                        serverSelectionTimeoutMS=self.mongodb_config["server_selection_timeout"],
+                        connectTimeoutMS=self.mongodb_config["connect_timeout"],
+                        socketTimeoutMS=self.mongodb_config["socket_timeout"]
+                    )
+                    # 测试连接
+                    client.server_info()
+                    client.close()
+                    return True, "MongoDB连接成功（使用连接字符串）"
+                except Exception as e:
+                    return False, f"MongoDB连接失败（连接字符串方式）: {str(e)}"
+            
+            # 降级到分离配置项方式
             # 构建连接参数
             connect_kwargs = {
                 "host": self.mongodb_config["host"],
@@ -115,7 +178,7 @@ class DatabaseManager:
             client.server_info()
             client.close()
 
-            return True, "MongoDB连接成功"
+            return True, "MongoDB连接成功（使用分离配置项）"
 
         except ImportError:
             return False, "pymongo未安装"
@@ -200,27 +263,40 @@ class DatabaseManager:
             try:
                 import pymongo
 
-                # 构建连接参数
-                connect_kwargs = {
-                    "host": self.mongodb_config["host"],
-                    "port": self.mongodb_config["port"],
-                    "serverSelectionTimeoutMS": self.mongodb_config["server_selection_timeout"],
-                    "connectTimeoutMS": self.mongodb_config["connect_timeout"],
-                    "socketTimeoutMS": self.mongodb_config["socket_timeout"]
-                }
+                # 🔥 优先使用连接字符串
+                if self.mongodb_config.get("connection_string"):
+                    self.mongodb_client = pymongo.MongoClient(
+                        self.mongodb_config["connection_string"],
+                        serverSelectionTimeoutMS=self.mongodb_config["server_selection_timeout"],
+                        connectTimeoutMS=self.mongodb_config["connect_timeout"],
+                        socketTimeoutMS=self.mongodb_config["socket_timeout"]
+                    )
+                    self.logger.info("MongoDB客户端初始化成功（使用连接字符串）")
+                else:
+                    # 降级到分离配置项方式
+                    # 构建连接参数
+                    connect_kwargs = {
+                        "host": self.mongodb_config["host"],
+                        "port": self.mongodb_config["port"],
+                        "serverSelectionTimeoutMS": self.mongodb_config["server_selection_timeout"],
+                        "connectTimeoutMS": self.mongodb_config["connect_timeout"],
+                        "socketTimeoutMS": self.mongodb_config["socket_timeout"]
+                    }
 
-                # 如果有用户名和密码，添加认证
-                if self.mongodb_config["username"] and self.mongodb_config["password"]:
-                    connect_kwargs.update({
-                        "username": self.mongodb_config["username"],
-                        "password": self.mongodb_config["password"],
-                        "authSource": self.mongodb_config["auth_source"]
-                    })
+                    # 如果有用户名和密码，添加认证
+                    if self.mongodb_config["username"] and self.mongodb_config["password"]:
+                        connect_kwargs.update({
+                            "username": self.mongodb_config["username"],
+                            "password": self.mongodb_config["password"],
+                            "authSource": self.mongodb_config["auth_source"]
+                        })
 
-                self.mongodb_client = pymongo.MongoClient(**connect_kwargs)
-                self.logger.info("MongoDB客户端初始化成功")
+                    self.mongodb_client = pymongo.MongoClient(**connect_kwargs)
+                    self.logger.info("MongoDB客户端初始化成功（使用分离配置项）")
             except Exception as e:
                 self.logger.error(f"MongoDB客户端初始化失败: {e}")
+                import traceback
+                self.logger.error(traceback.format_exc())
                 self.mongodb_available = False
 
         # 初始化Redis连接

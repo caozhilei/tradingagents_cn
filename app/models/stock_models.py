@@ -180,12 +180,23 @@ class MarketQuotesExtended(BaseModel):
     volume: Optional[float] = Field(None, description="成交量")
     turnover_rate: Optional[float] = Field(None, description="换手率")
     volume_ratio: Optional[float] = Field(None, description="量比")
+    total_mv: Optional[float] = Field(None, description="总市值(亿元)")
+    float_mv: Optional[float] = Field(None, description="流通市值(亿元)")
+    pe: Optional[float] = Field(None, description="市盈率")
+    pe_ttm: Optional[float] = Field(None, description="TTM市盈率")
+    pb: Optional[float] = Field(None, description="市净率")
     
     # 五档行情
     bid_prices: Optional[List[float]] = Field(None, description="买1-5价")
     bid_volumes: Optional[List[float]] = Field(None, description="买1-5量")
     ask_prices: Optional[List[float]] = Field(None, description="卖1-5价")
     ask_volumes: Optional[List[float]] = Field(None, description="卖1-5量")
+    
+    # MCP 原始/扩展字段，便于留存快照详情
+    mcp_raw: Optional[Dict[str, Any]] = Field(None, description="MCP返回的原始结构")
+    mcp_bsp: Optional[List[Dict[str, Any]]] = Field(None, description="MCP盘口原始列表")
+    mcp_pro_info: Optional[Dict[str, Any]] = Field(None, description="MCP ProInfo 扩展")
+    mcp_stat_info: Optional[Dict[str, Any]] = Field(None, description="MCP StatInfo 扩展")
     
     # 时间戳
     timestamp: Optional[datetime] = Field(None, description="行情时间戳")

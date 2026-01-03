@@ -292,3 +292,14 @@ if __name__ == "__main__":
     asyncio.run(sync_industries_with_retry(max_retries=3, delay=2.0))
 
 
+
+
+
+
+
+
+
+
+
+
+

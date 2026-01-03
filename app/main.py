@@ -1,5 +1,5 @@
 """
-TradingAgents-CN v1.0.0-preview FastAPI Backend
+IRAgents-CN v1.0.0-preview FastAPI Backend
 主应用程序入口
 
 Copyright (c) 2025 hsliuping. All rights reserved.
@@ -28,7 +28,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.core.logging_config import setup_logging
-from app.routers import auth_db as auth, analysis, screening, queue, sse, health, favorites, config, reports, database, operation_logs, tags, tushare_init, akshare_init, baostock_init, historical_data, multi_period_sync, financial_data, news_data, social_media, internal_messages, usage_statistics, model_capabilities, cache, logs
+from app.routers import auth_db as auth, analysis, screening, queue, sse, health, favorites, config, reports, database, operation_logs, tags, tushare_init, akshare_init, baostock_init, historical_data, multi_period_sync, financial_data, news_data, social_media, internal_messages, usage_statistics, model_capabilities, cache, logs, prompt_template, agent_tool, tool_config
 from app.routers import sync as sync_router, multi_source_sync
 from app.routers import stocks as stocks_router
 from app.routers import stock_data as stock_data_router
@@ -86,7 +86,7 @@ async def _print_config_summary(logger):
     """显示配置摘要"""
     try:
         logger.info("=" * 70)
-        logger.info("📋 TradingAgents-CN Configuration Summary")
+        logger.info("📋 IRAgents-CN Configuration Summary")
         logger.info("=" * 70)
 
         # .env 文件路径信息
@@ -602,7 +602,7 @@ async def lifespan(app: FastAPI):
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="TradingAgents-CN API",
+    title="IRAgents-CN API",
     description="股票分析与批量队列系统 API",
     version=get_version(),
     docs_url="/docs" if settings.DEBUG else None,
@@ -696,6 +696,8 @@ app.include_router(stock_data_router.router, tags=["stock-data"])
 app.include_router(stock_sync_router.router, tags=["stock-sync"])
 app.include_router(tags.router, prefix="/api", tags=["tags"])
 app.include_router(config.router, prefix="/api", tags=["config"])
+app.include_router(prompt_template.router, tags=["prompt-templates"])
+app.include_router(agent_tool.router, tags=["agent-tools"])
 app.include_router(model_capabilities.router, tags=["model-capabilities"])
 app.include_router(usage_statistics.router, tags=["usage-statistics"])
 app.include_router(database.router, prefix="/api/system", tags=["database"])
@@ -711,6 +713,13 @@ app.include_router(notifications_router.router, prefix="/api", tags=["notificati
 
 # 🔥 WebSocket 通知模块（替代 SSE + Redis PubSub）
 app.include_router(websocket_notifications_router.router, prefix="/api", tags=["websocket"])
+
+# 工作流配置管理
+from app.routers import workflow_config as workflow_config_router
+app.include_router(workflow_config_router.router, prefix="/api", tags=["workflow"])
+
+# 工具配置管理
+app.include_router(tool_config.router, tags=["tools"])
 
 # 定时任务管理
 app.include_router(scheduler_router.router, tags=["scheduler"])
@@ -735,7 +744,7 @@ async def root():
     """根路径，返回API信息"""
     print("🏠 根路径被访问")
     return {
-        "name": "TradingAgents-CN API",
+        "name": "IRAgents-CN API",
         "version": get_version(),
         "status": "running",
         "docs_url": "/docs" if settings.DEBUG else None

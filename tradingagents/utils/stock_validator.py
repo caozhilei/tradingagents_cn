@@ -65,7 +65,7 @@ class StockDataPreparer:
 
         Args:
             stock_code: 股票代码
-            market_type: 市场类型 ("A股", "港股", "美股", "auto")
+            market_type: 市场类型 ("A股", "港股", "美股", "数字货币", "auto")
             period_days: 历史数据时长（天），默认使用类初始化时的值
             analysis_date: 分析日期，默认为今天
 
@@ -80,10 +80,14 @@ class StockDataPreparer:
 
         logger.info(f"📊 [数据准备] 开始准备股票数据: {stock_code} (市场: {market_type}, 时长: {period_days}天)")
 
-        # 1. 基本格式验证
+        # 1. 基本格式验证 - 这会标准化 market_type
         format_result = self._validate_format(stock_code, market_type)
         if not format_result.is_valid:
             return format_result
+
+        # 🔥 使用标准化后的 market_type（处理编码问题）
+        market_type = format_result.market_type
+        logger.info(f"🔍 [数据准备] 标准化后的市场类型: {repr(market_type)}")
 
         # 2. 自动检测市场类型
         if market_type == "auto":
@@ -93,27 +97,50 @@ class StockDataPreparer:
         # 3. 预获取数据并验证
         return self._prepare_data_by_market(stock_code, market_type, period_days, analysis_date)
     
-    def _validate_format(self, stock_code: str, market_type: str) -> StockDataPreparationResult:
-        """验证股票代码格式"""
-        stock_code = stock_code.strip()
-        
-        if not stock_code:
-            return StockDataPreparationResult(
-                is_valid=False,
-                stock_code=stock_code,
-                error_message="股票代码不能为空",
-                suggestion="请输入有效的股票代码"
-            )
+    def _normalize_market_type(self, market_type: str, stock_code: str = "") -> str:
+        """
+        统一的市场类型标准化处理
+        支持：A股、港股、美股、数字货币
+        处理编码问题和自动识别
+        """
+        if not market_type:
+            # 如果没有提供市场类型，通过股票代码自动识别
+            return self._detect_market_type(stock_code) if stock_code else "A股"
 
-        if len(stock_code) > 10:
-            return StockDataPreparationResult(
-                is_valid=False,
-                stock_code=stock_code,
-                error_message="股票代码长度不能超过10个字符",
-                suggestion="请检查股票代码格式"
-            )
-        
-        # 根据市场类型验证格式
+        # 标准化处理各个市场类型
+        if market_type in ["A股", "A股票", "A股市场"]:
+            return "A股"
+        elif market_type in ["港股", "香港股票", "港股市场"]:
+            return "港股"
+        elif market_type in ["美股", "美国股票", "美股市场"]:
+            return "美股"
+        elif market_type in ["数字货币", "加密货币", "数字资产"]:
+            return "数字货币"
+
+        # 处理可能的编码问题（字节串匹配）
+        try:
+            if isinstance(market_type, str):
+                market_type_bytes = market_type.encode('utf-8')
+                # 数字货币的UTF-8字节串
+                if market_type_bytes == b'\xe6\x95\xb0\xe5\xad\x97\xe8\xb4\xa7\xe5\xb8\x81':
+                    return "数字货币"
+        except Exception:
+            pass
+
+        # 如果无法识别，通过股票代码格式自动识别
+        if stock_code:
+            detected = self._detect_market_type(stock_code)
+            if detected != "unknown":
+                logger.info(f"🔍 [市场类型自动识别] {market_type} -> {detected} (通过股票代码: {stock_code})")
+                return detected
+
+        # 默认返回A股
+        return "A股"
+
+    def _validate_code_format(self, stock_code: str, market_type: str) -> StockDataPreparationResult:
+        """
+        统一验证各市场股票代码格式
+        """
         if market_type == "A股":
             if not re.match(r'^\d{6}$', stock_code):
                 return StockDataPreparationResult(
@@ -142,14 +169,168 @@ class StockDataPreparer:
                     is_valid=False,
                     stock_code=stock_code,
                     market_type="美股",
+                    error_message="美股代码格式错误，应为1-5个字母",
+                    suggestion="请输入1-5位字母的美股代码，如：AAPL、TSLA"
+                )
+        elif market_type == "数字货币":
+            # 数字货币：2-10个字母/数字组合，且至少包含一个字母
+            stock_code_upper = stock_code.upper()
+            if not (re.match(r'^[A-Z0-9]{2,10}$', stock_code_upper) and
+                    re.match(r'.*[A-Z].*', stock_code_upper)):
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=stock_code,
+                    market_type="数字货币",
+                    error_message="数字货币代码格式错误，应为2-10个字母/数字组合，且至少包含一个字母",
+                    suggestion="请输入有效的数字货币代码，如：BTC、ETH、DOGE"
+                )
+
+        # 格式验证通过
+        return StockDataPreparationResult(is_valid=True, stock_code=stock_code, market_type=market_type)
+
+    def _normalize_market_type_safe(self, market_type: str, stock_code: str = "") -> str:
+        """
+        安全的统一市场类型标准化处理
+        解决Docker环境中的编码问题
+        """
+        # 1. 直接匹配已知的市场类型（包括别名）
+        market_aliases = {
+            "A股": ["A股", "A股票", "A股市场", "中国A股"],
+            "港股": ["港股", "香港股票", "港股市场", "HK"],
+            "美股": ["美股", "美国股票", "美股市场", "US", "NASDAQ", "NYSE"],
+            "数字货币": ["数字货币", "加密货币", "数字资产", "币圈", "区块链"]
+        }
+
+        for standard_type, aliases in market_aliases.items():
+            if market_type in aliases:
+                return standard_type
+
+        # 2. 处理可能的编码乱码（字节串匹配）
+        if isinstance(market_type, str):
+            try:
+                market_type_bytes = market_type.encode('utf-8')
+                # 数字货币的UTF-8字节串
+                if market_type_bytes == b'\xe6\x95\xb0\xe5\xad\x97\xe8\xb4\xa7\xe5\xb8\x81':
+                    return "数字货币"
+            except Exception:
+                pass
+
+        # 3. 通过股票代码自动识别市场类型（兜底策略）
+        if stock_code:
+            stock_code_upper = stock_code.upper()
+
+            # 数字货币：优先检查常见数字货币代码
+            crypto_codes = {
+                'BTC', 'ETH', 'DOGE', 'USDT', 'BNB', 'ADA', 'SOL', 'DOT', 'AVAX', 'LINK',
+                'UNI', 'ALGO', 'VET', 'ICP', 'FIL', 'TRX', 'ETC', 'XLM', 'THETA', 'HBAR',
+                'NEAR', 'FLOW', 'MANA', 'SAND', 'AXS', 'GALA', 'ENJ', 'BAT', 'CHZ', 'GAL',
+                'YGG', 'APE', 'LRC', 'ENS', 'LOOKS', 'BEAN', 'PEPE', 'SHIB', 'FLOKI'
+            }
+
+            if stock_code_upper in crypto_codes:
+                logger.info(f"🔍 [市场识别] 通过数字货币白名单识别: {stock_code} -> 数字货币")
+                return "数字货币"
+
+            # 数字货币：3-4个字母（典型的数字货币代码长度）
+            if re.match(r'^[A-Z]{3,4}$', stock_code_upper):
+                logger.info(f"🔍 [市场识别] 通过长度识别: {stock_code} -> 数字货币")
+                return "数字货币"
+
+            # 美股：纯字母，1-5个字符
+            if re.match(r'^[A-Z]{1,5}$', stock_code_upper):
+                return "美股"
+            # 港股：数字，4-5位
+            elif re.match(r'^\d{4,5}$', stock_code):
+                return "港股"
+            # A股：6位数字
+            elif re.match(r'^\d{6}$', stock_code):
+                return "A股"
+
+        # 4. 默认返回A股
+        return "A股"
+
+    def _validate_format(self, stock_code: str, market_type: str) -> StockDataPreparationResult:
+        """验证股票代码格式"""
+        logger.info(f"🔍 [格式验证] 进入方法: stock_code={repr(stock_code)}, market_type={repr(market_type)}")
+
+        stock_code = stock_code.strip()
+
+        if not stock_code:
+            return StockDataPreparationResult(
+                is_valid=False,
+                stock_code=stock_code,
+                error_message="股票代码不能为空",
+                suggestion="请输入有效的股票代码"
+            )
+
+        if len(stock_code) > 10:
+            return StockDataPreparationResult(
+                is_valid=False,
+                stock_code=stock_code,
+                error_message="股票代码长度不能超过10个字符",
+                suggestion="请检查股票代码格式"
+            )
+
+        # 🎯 使用统一的市场类型标准化处理
+        market_type_normalized = self._normalize_market_type_safe(market_type, stock_code)
+        logger.info(f"🔍 [格式验证] 标准化结果: {repr(market_type)} -> {repr(market_type_normalized)}")
+
+        # 🎯 统一验证各个市场的代码格式
+        if market_type_normalized == "A股":
+            if not re.match(r'^\d{6}$', stock_code):
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=stock_code,
+                    market_type="A股",
+                    error_message="A股代码格式错误，应为6位数字",
+                    suggestion="请输入6位数字的A股代码，如：000001、600519"
+                )
+        elif market_type_normalized == "港股":
+            stock_code_upper = stock_code.upper()
+            hk_format = re.match(r'^\d{4,5}\.HK$', stock_code_upper)
+            digit_format = re.match(r'^\d{4,5}$', stock_code)
+
+            if not (hk_format or digit_format):
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=stock_code,
+                    market_type="港股",
+                    error_message="港股代码格式错误",
+                    suggestion="请输入4-5位数字.HK格式（如：0700.HK）或4-5位数字（如：0700）"
+                )
+        elif market_type_normalized == "美股":
+            if not re.match(r'^[A-Z]{1,5}$', stock_code.upper()):
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=stock_code,
+                    market_type="美股",
                     error_message="美股代码格式错误，应为1-5位字母",
                     suggestion="请输入1-5位字母的美股代码，如：AAPL、TSLA"
                 )
+        elif market_type_normalized == "数字货币":
+            # 数字货币：2-10个字母/数字组合，且至少包含一个字母
+            stock_code_upper = stock_code.upper()
+            logger.info(f"🔍 [格式验证] 检查数字货币代码: {stock_code_upper}")
+            regex1_match = re.match(r'^[A-Z0-9]{2,10}$', stock_code_upper)
+            regex2_match = re.match(r'.*[A-Z].*', stock_code_upper)
+            logger.info(f"🔍 [格式验证] 正则匹配结果: regex1={regex1_match is not None}, regex2={regex2_match is not None}")
+
+            if not regex1_match or not regex2_match:
+                logger.warning(f"⚠️ [格式验证] 数字货币代码格式错误: {stock_code_upper}")
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=stock_code,
+                    market_type="数字货币",
+                    error_message="数字货币代码格式错误，应为2-10个字母/数字组合，且至少包含一个字母",
+                    suggestion="请输入有效的数字货币代码，如：BTC、ETH、DOGE"
+                )
         
+        # 如果股票代码不符合数字货币格式，保持原来的逻辑
+
         return StockDataPreparationResult(
             is_valid=True,
             stock_code=stock_code,
-            market_type=market_type
+            market_type=market_type_normalized  # 返回标准化后的市场类型
         )
     
     def _detect_market_type(self, stock_code: str) -> str:
@@ -167,6 +348,14 @@ class StockDataPreparer:
         # 美股：1-5位字母
         if re.match(r'^[A-Z]{1,5}$', stock_code):
             return "美股"
+        
+        # 数字货币：2-10个字母/数字组合，且至少包含一个字母（常见数字货币代码）
+        common_crypto = ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'XRP', 'DOGE', 'DOT', 'AVAX', 'SHIB', 
+                        'MATIC', 'LINK', 'UNI', 'ATOM', 'ETC', 'LTC', 'NEAR', 'ALGO', 'FIL', 'ICP']
+        if stock_code in common_crypto or (re.match(r'^[A-Z0-9]{2,10}$', stock_code) and re.match(r'.*[A-Z].*', stock_code)):
+            # 排除明显不是数字货币的代码（如纯数字、纯字母但符合美股格式）
+            if not re.match(r'^\d+$', stock_code) and not re.match(r'^[A-Z]{1,5}$', stock_code):
+                return "数字货币"
         
         return "未知"
 
@@ -265,19 +454,68 @@ class StockDataPreparer:
         logger.debug(f"📊 [数据准备] 开始为{market_type}股票{stock_code}准备数据")
 
         try:
-            if market_type == "A股":
+            # 🔥 强制标准化市场类型（使用字节串比较，避免编码问题）
+            market_type_normalized = market_type
+            crypto_bytes = b'\xe6\x95\xb0\xe5\xad\x97\xe8\xb4\xa7\xe5\xb8\x81'  # '数字货币' 的 UTF-8 字节串
+            a_stock_bytes = b'A\xe8\x82\xa1'  # 'A股'
+            us_stock_bytes = b'\xe7\xbe\x8e\xe8\x82\xa1'  # '美股'
+            hk_stock_bytes = b'\xe6\xb8\xaf\xe8\x82\xa1'  # '港股'
+            
+            if market_type:
+                try:
+                    # 先尝试直接字符串比较
+                    if market_type == '数字货币':
+                        market_type_normalized = '数字货币'
+                    elif market_type == 'A股':
+                        market_type_normalized = 'A股'
+                    elif market_type == '港股':
+                        market_type_normalized = '港股'
+                    elif market_type == '美股':
+                        market_type_normalized = '美股'
+                    else:
+                        # 如果直接比较失败，使用字节串比较（处理编码问题）
+                        if isinstance(market_type, str):
+                            market_type_bytes = market_type.encode('utf-8')
+                            if market_type_bytes in crypto_bytes_list:
+                                market_type_normalized = '数字货币'
+                            elif market_type_bytes == a_stock_bytes:
+                                market_type_normalized = 'A股'
+                            elif market_type_bytes == us_stock_bytes:
+                                market_type_normalized = '美股'
+                            elif market_type_bytes == hk_stock_bytes:
+                                market_type_normalized = '港股'
+                            else:
+                                # 方法3: 如果market_type是乱码，但股票代码符合数字货币格式，推断为数字货币
+                                # 不限制market_type的长度，因为编码问题可能导致长度变化
+                                if stock_code and isinstance(market_type, str):
+                                    if re.match(r'^[A-Z0-9]{2,10}$', stock_code.upper()) and re.match(r'.*[A-Z].*', stock_code.upper()):
+                                        logger.info(f"🔍 [智能推断] 通过股票代码格式推断市场类型: {stock_code} (原始market_type: {repr(market_type)}, len={len(market_type)}) -> 数字货币")
+                                        market_type_normalized = '数字货币'
+                except Exception as e:
+                    logger.warning(f"⚠️ 市场类型标准化失败: {e}, 原始值: {repr(market_type)}")
+                    # 如果标准化失败，尝试通过股票代码推断
+                    if stock_code and re.match(r'^[A-Z0-9]{2,10}$', stock_code.upper()) and re.match(r'.*[A-Z].*', stock_code.upper()):
+                        logger.info(f"🔍 [兜底推断] 通过股票代码格式推断市场类型: {stock_code} -> 数字货币")
+                        market_type_normalized = '数字货币'
+            
+            logger.info(f"🔍 [市场类型匹配-同步] 原始: {repr(market_type)}, 标准化: {repr(market_type_normalized)}, 匹配数字货币: {market_type_normalized == '数字货币'}")
+            
+            # 使用标准化后的值进行判断（也支持原始值作为fallback）
+            if market_type_normalized == "A股" or market_type == "A股":
                 return self._prepare_china_stock_data(stock_code, period_days, analysis_date)
-            elif market_type == "港股":
+            elif market_type_normalized == "港股":
                 return self._prepare_hk_stock_data(stock_code, period_days, analysis_date)
-            elif market_type == "美股":
+            elif market_type_normalized == "美股":
                 return self._prepare_us_stock_data(stock_code, period_days, analysis_date)
+            elif market_type_normalized == "数字货币":
+                return self._prepare_crypto_data(stock_code, period_days, analysis_date)
             else:
                 return StockDataPreparationResult(
                     is_valid=False,
                     stock_code=stock_code,
                     market_type=market_type,
                     error_message=f"不支持的市场类型: {market_type}",
-                    suggestion="请选择支持的市场类型：A股、港股、美股"
+                    suggestion="请选择支持的市场类型：A股、港股、美股、数字货币"
                 )
         except Exception as e:
             logger.error(f"❌ [数据准备] 数据准备异常: {e}")
@@ -295,19 +533,28 @@ class StockDataPreparer:
         logger.debug(f"📊 [数据准备-异步] 开始为{market_type}股票{stock_code}准备数据")
 
         try:
-            if market_type == "A股":
+            # 🎯 使用统一的市场类型标准化处理
+            market_type_normalized = self._normalize_market_type_safe(market_type, stock_code)
+
+            logger.info(f"🔍 [市场类型匹配-异步] 原始: {repr(market_type)}, 标准化: {repr(market_type_normalized)}, 匹配数字货币: {market_type_normalized == '数字货币'}")
+
+            # 使用标准化后的值进行判断
+            if market_type_normalized == "A股":
                 return await self._prepare_china_stock_data_async(stock_code, period_days, analysis_date)
-            elif market_type == "港股":
+            elif market_type_normalized == "港股":
                 return self._prepare_hk_stock_data(stock_code, period_days, analysis_date)
-            elif market_type == "美股":
+            elif market_type_normalized == "美股":
                 return self._prepare_us_stock_data(stock_code, period_days, analysis_date)
+            elif market_type_normalized == "数字货币":
+                logger.info(f"✅ [数字货币] 匹配成功，开始准备数字货币数据: {stock_code}")
+                return self._prepare_crypto_data(stock_code, period_days, analysis_date)
             else:
                 return StockDataPreparationResult(
                     is_valid=False,
                     stock_code=stock_code,
                     market_type=market_type,
                     error_message=f"不支持的市场类型: {market_type}",
-                    suggestion="请选择支持的市场类型：A股、港股、美股"
+                    suggestion="请选择支持的市场类型：A股、港股、美股、数字货币"
                 )
         except Exception as e:
             logger.error(f"❌ [数据准备-异步] 数据准备异常: {e}")
@@ -1217,6 +1464,126 @@ class StockDataPreparer:
                 suggestion="请检查网络连接或数据源配置"
             )
 
+    def _prepare_crypto_data(self, stock_code: str, period_days: int,
+                              analysis_date: str) -> StockDataPreparationResult:
+        """预获取数字货币数据"""
+        logger.info(f"📊 [数字货币数据] 开始准备{stock_code}的数据 (时长: {period_days}天)")
+
+        # 标准化数字货币代码格式（转换为大写）
+        formatted_code = stock_code.strip().upper()
+
+        # yfinance 中加密货币的格式是 {CRYPTO}-USD
+        yfinance_ticker = f"{formatted_code}-USD"
+
+        # 计算日期范围
+        end_date = datetime.strptime(analysis_date, '%Y-%m-%d')
+        start_date = end_date - timedelta(days=period_days)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+
+        logger.debug(f"📅 [数字货币数据] 日期范围: {start_date_str} → {end_date_str}")
+        logger.debug(f"🪙 [数字货币数据] yfinance ticker: {yfinance_ticker}")
+
+        has_historical_data = False
+        has_basic_info = False
+        crypto_name = formatted_code  # 使用代码作为名称
+        cache_status = ""
+
+        try:
+            # 检查 yfinance 是否可用
+            try:
+                import yfinance as yf
+            except ImportError:
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=formatted_code,
+                    market_type="数字货币",
+                    error_message="yfinance库未安装，无法获取数字货币数据",
+                    suggestion="请安装yfinance库：pip install yfinance"
+                )
+
+            # 1. 尝试获取历史数据
+            logger.debug(f"📊 [数字货币数据] 获取{yfinance_ticker}历史数据 ({start_date_str} 到 {end_date_str})...")
+
+            try:
+                ticker = yf.Ticker(yfinance_ticker)
+                historical_data = ticker.history(start=start_date_str, end=end_date_str)
+
+                if historical_data is not None and not historical_data.empty:
+                    # 检查数据有效性
+                    has_valid_data = (
+                        len(historical_data) > 0 and
+                        'Close' in historical_data.columns
+                    )
+
+                    if has_valid_data:
+                        has_historical_data = True
+                        has_basic_info = True
+                        
+                        # 尝试获取加密货币名称
+                        try:
+                            info = ticker.info
+                            if info and 'longName' in info:
+                                crypto_name = info.get('longName', formatted_code)
+                            elif info and 'shortName' in info:
+                                crypto_name = info.get('shortName', formatted_code)
+                        except Exception:
+                            pass  # 如果获取名称失败，使用代码
+
+                        logger.info(f"✅ [数字货币数据] 历史数据获取成功: {formatted_code} ({len(historical_data)}条记录)")
+                        cache_status = f"历史数据已缓存({len(historical_data)}条记录)"
+
+                        # 数据准备成功
+                        logger.info(f"🎉 [数字货币数据] 数据准备完成: {formatted_code} ({crypto_name})")
+                        return StockDataPreparationResult(
+                            is_valid=True,
+                            stock_code=formatted_code,
+                            market_type="数字货币",
+                            stock_name=crypto_name,
+                            has_historical_data=has_historical_data,
+                            has_basic_info=has_basic_info,
+                            data_period_days=period_days,
+                            cache_status=cache_status
+                        )
+                    else:
+                        logger.warning(f"⚠️ [数字货币数据] 历史数据无效: {formatted_code}")
+                        return StockDataPreparationResult(
+                            is_valid=False,
+                            stock_code=formatted_code,
+                            market_type="数字货币",
+                            error_message=f"数字货币 {formatted_code} 的历史数据无效或不足",
+                            suggestion="该数字货币代码可能不存在或数据源暂时不可用，请检查代码是否正确（如：BTC、ETH、DOGE）"
+                        )
+                else:
+                    logger.warning(f"⚠️ [数字货币数据] 无法获取历史数据: {formatted_code}")
+                    return StockDataPreparationResult(
+                        is_valid=False,
+                        stock_code=formatted_code,
+                        market_type="数字货币",
+                        error_message=f"数字货币代码 {formatted_code} 不存在或无法获取数据",
+                        suggestion="请检查数字货币代码是否正确，常见代码如：BTC（比特币）、ETH（以太坊）、DOGE（狗狗币）"
+                    )
+
+            except Exception as e:
+                logger.error(f"❌ [数字货币数据] 获取数据失败: {e}")
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=formatted_code,
+                    market_type="数字货币",
+                    error_message=f"获取数字货币数据失败: {str(e)}",
+                    suggestion="请检查网络连接或稍后重试，确认数字货币代码是否正确"
+                )
+
+        except Exception as e:
+            logger.error(f"❌ [数字货币数据] 数据准备失败: {e}")
+            return StockDataPreparationResult(
+                is_valid=False,
+                stock_code=formatted_code,
+                market_type="数字货币",
+                error_message=f"数据准备失败: {str(e)}",
+                suggestion="请检查网络连接或数据源配置"
+            )
+
 
 
 
@@ -1238,7 +1605,7 @@ def prepare_stock_data(stock_code: str, market_type: str = "auto",
 
     Args:
         stock_code: 股票代码
-        market_type: 市场类型 ("A股", "港股", "美股", "auto")
+            market_type: 市场类型 ("A股", "港股", "美股", "数字货币", "auto")
         period_days: 历史数据时长（天），默认30天
         analysis_date: 分析日期，默认为今天
 
@@ -1256,7 +1623,7 @@ def is_stock_data_ready(stock_code: str, market_type: str = "auto",
 
     Args:
         stock_code: 股票代码
-        market_type: 市场类型 ("A股", "港股", "美股", "auto")
+            market_type: 市场类型 ("A股", "港股", "美股", "数字货币", "auto")
         period_days: 历史数据时长（天），默认30天
         analysis_date: 分析日期，默认为今天
 
@@ -1274,7 +1641,7 @@ def get_stock_preparation_message(stock_code: str, market_type: str = "auto",
 
     Args:
         stock_code: 股票代码
-        market_type: 市场类型 ("A股", "港股", "美股", "auto")
+            market_type: 市场类型 ("A股", "港股", "美股", "数字货币", "auto")
         period_days: 历史数据时长（天），默认30天
         analysis_date: 分析日期，默认为今天
 
@@ -1298,7 +1665,7 @@ async def prepare_stock_data_async(stock_code: str, market_type: str = "auto",
 
     Args:
         stock_code: 股票代码
-        market_type: 市场类型 ("A股", "港股", "美股", "auto")
+            market_type: 市场类型 ("A股", "港股", "美股", "数字货币", "auto")
         period_days: 历史数据时长（天），默认30天
         analysis_date: 分析日期，默认为今天
 
@@ -1317,10 +1684,14 @@ async def prepare_stock_data_async(stock_code: str, market_type: str = "auto",
 
     logger.info(f"📊 [数据准备-异步] 开始准备股票数据: {stock_code} (市场: {market_type}, 时长: {period_days}天)")
 
-    # 1. 基本格式验证（同步操作）
+    # 1. 基本格式验证（同步操作）- 这会标准化 market_type
     format_result = preparer._validate_format(stock_code, market_type)
     if not format_result.is_valid:
         return format_result
+
+    # 🔥 使用标准化后的 market_type（处理编码问题）
+    market_type = format_result.market_type
+    logger.info(f"🔍 [数据准备-异步] 标准化后的市场类型: {repr(market_type)}")
 
     # 2. 自动检测市场类型
     if market_type == "auto":

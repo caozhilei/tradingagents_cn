@@ -1943,3 +1943,365 @@ def get_stock_data_by_market(symbol: str, start_date: str = None, end_date: str 
     except Exception as e:
         logger.error(f"❌ 获取股票数据失败: {e}")
         return f"❌ 获取股票{symbol}数据失败: {e}"
+
+
+def get_crypto_data_unified(
+    ticker: Annotated[str, "数字货币代码，如：BTC、ETH、DOGE等"],
+    start_date: Annotated[str, "开始日期，格式：YYYY-MM-DD"],
+    end_date: Annotated[str, "结束日期，格式：YYYY-MM-DD"]
+) -> str:
+    """
+    统一的数字货币数据获取接口
+    使用yfinance获取数字货币的价格和技术指标数据
+
+    Args:
+        ticker: 数字货币代码（如：BTC、ETH、DOGE）
+        start_date: 开始日期（格式：YYYY-MM-DD）
+        end_date: 结束日期（格式：YYYY-MM-DD）
+
+    Returns:
+        str: 格式化的数字货币数据和技术分析报告
+    """
+    # 🔧 智能日期范围处理：自动扩展到配置的回溯天数，处理周末/节假日
+    from tradingagents.utils.dataflow_utils import get_trading_date_range
+    from app.core.config import get_settings
+
+    original_start_date = start_date
+    original_end_date = end_date
+
+    # 从配置获取市场分析回溯天数（默认30天）
+    try:
+        settings = get_settings()
+        lookback_days = settings.MARKET_ANALYST_LOOKBACK_DAYS
+        logger.info(f"📅 [配置验证] ===== MARKET_ANALYST_LOOKBACK_DAYS 配置检查 =====")
+        logger.info(f"📅 [配置验证] 从配置文件读取: {lookback_days}天")
+        logger.info(f"📅 [配置验证] 配置来源: app.core.config.Settings")
+        logger.info(f"📅 [配置验证] 环境变量: MARKET_ANALYST_LOOKBACK_DAYS={lookback_days}")
+    except Exception as e:
+        lookback_days = 30  # 默认30天
+        logger.warning(f"⚠️ [配置验证] 无法获取配置，使用默认值: {lookback_days}天")
+        logger.warning(f"⚠️ [配置验证] 错误详情: {e}")
+
+    # 使用 end_date 作为目标日期，向前回溯指定天数
+    start_date, end_date = get_trading_date_range(end_date, lookback_days=lookback_days)
+
+    logger.info(f"📅 [智能日期] ===== 日期范围计算结果 =====")
+    logger.info(f"📅 [智能日期] 原始输入: {original_start_date} 至 {original_end_date}")
+    logger.info(f"📅 [智能日期] 回溯天数: {lookback_days}天")
+    logger.info(f"📅 [智能日期] 计算结果: {start_date} 至 {end_date}")
+    logger.info(f"📅 [智能日期] 实际天数: {(datetime.strptime(end_date, '%Y-%m-%d') - datetime.strptime(start_date, '%Y-%m-%d')).days}天")
+    logger.info(f"💡 [智能日期] 说明: 自动扩展日期范围以处理周末、节假日和数据延迟")
+
+    # 记录详细的输入参数
+    logger.info(f"🪙 [数字货币接口] 开始获取数字货币数据",
+               extra={
+                   "ticker": ticker,
+                   "start_date": start_date,
+                   "end_date": end_date,
+                   "original_start_date": original_start_date,
+                   "original_end_date": original_end_date,
+                   "lookback_days": lookback_days
+               })
+
+    try:
+        # 检查 yfinance 是否可用
+        try:
+            import yfinance as yf
+        except ImportError:
+            return f"""❌ 获取数字货币{ticker}数据失败
+
+错误详情：yfinance库未安装
+建议：请安装yfinance库以获取数字货币数据
+
+安装命令：pip install yfinance
+"""
+
+        # 标准化数字货币代码格式（转换为大写）
+        formatted_code = ticker.strip().upper()
+
+        # yfinance 中加密货币的格式是 {CRYPTO}-USD
+        yfinance_ticker = f"{formatted_code}-USD"
+
+        logger.info(f"🪙 [数字货币接口] 处理代码: {ticker} -> {formatted_code} -> {yfinance_ticker}")
+
+        # 获取数字货币数据
+        ticker_obj = yf.Ticker(yfinance_ticker)
+
+        # 获取历史价格数据
+        logger.info(f"🪙 [数字货币接口] 获取历史数据: {start_date} 到 {end_date}")
+        historical_data = ticker_obj.history(start=start_date, end=end_date)
+
+        if historical_data is None or historical_data.empty:
+            return f"""❌ 获取数字货币{ticker}数据失败
+
+错误详情：无法获取数字货币的历史数据
+可能原因：
+1. 数字货币代码不正确
+2. 数据源暂时不可用
+3. 该数字货币不存在
+
+建议：请检查数字货币代码是否正确
+常见代码：BTC（比特币）、ETH（以太坊）、DOGE（狗狗币）、USDT（泰达币）
+"""
+
+        # 获取基本信息
+        crypto_name = formatted_code  # 默认使用代码
+        try:
+            info = ticker_obj.info
+            if info:
+                if 'longName' in info and info['longName']:
+                    crypto_name = info['longName']
+                elif 'shortName' in info and info['shortName']:
+                    crypto_name = info['shortName']
+        except Exception:
+            pass  # 如果获取名称失败，使用代码
+
+        # 计算技术指标
+        import pandas as pd
+        import numpy as np
+
+        # 基本价格统计
+        current_price = historical_data['Close'].iloc[-1] if not historical_data.empty else 0
+        price_change = historical_data['Close'].iloc[-1] - historical_data['Close'].iloc[0] if len(historical_data) > 1 else 0
+        price_change_percent = (price_change / historical_data['Close'].iloc[0] * 100) if historical_data['Close'].iloc[0] != 0 else 0
+
+        # 波动率计算
+        returns = historical_data['Close'].pct_change().dropna()
+        volatility = returns.std() * np.sqrt(365) * 100  # 年化波动率
+
+        # 移动平均线
+        ma_20 = historical_data['Close'].rolling(window=20).mean().iloc[-1] if len(historical_data) >= 20 else current_price
+        ma_50 = historical_data['Close'].rolling(window=50).mean().iloc[-1] if len(historical_data) >= 50 else current_price
+
+        # RSI计算
+        def calculate_rsi(data, period=14):
+            delta = data.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            rs = gain / loss
+            return 100 - (100 / (1 + rs))
+
+        rsi = calculate_rsi(historical_data['Close']).iloc[-1] if len(historical_data) >= 14 else 50
+
+        # MACD计算
+        exp1 = historical_data['Close'].ewm(span=12, adjust=False).mean()
+        exp2 = historical_data['Close'].ewm(span=26, adjust=False).mean()
+        macd = exp1 - exp2
+        signal = macd.ewm(span=9, adjust=False).mean()
+        macd_value = macd.iloc[-1]
+        signal_value = signal.iloc[-1]
+
+        # 交易量分析
+        avg_volume = historical_data['Volume'].mean()
+        current_volume = historical_data['Volume'].iloc[-1]
+        volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+
+        # 格式化报告
+        report = f"""# {crypto_name}（{formatted_code}）数字货币分析报告
+
+## 📊 基本信息
+- **数字货币名称**: {crypto_name}
+- **代码**: {formatted_code}
+- **数据源**: Yahoo Finance (yfinance)
+- **分析期间**: {start_date} 至 {end_date}
+- **数据点数**: {len(historical_data)} 个
+
+## 💰 价格信息
+- **当前价格**: ${current_price:.2f}
+- **期间涨跌**: ${price_change:.2f} ({price_change_percent:+.2f}%)
+- **最高价**: ${historical_data['High'].max():.2f}
+- **最低价**: ${historical_data['Low'].min():.2f}
+- **开盘价**: ${historical_data['Open'].iloc[0]:.2f}
+- **收盘价**: ${historical_data['Close'].iloc[-1]:.2f}
+
+## 📈 技术指标
+
+### 移动平均线
+- **20日均线**: ${ma_20:.2f}
+- **50日均线**: ${ma_50:.2f}
+- **均线关系**: {'价格在20日线上方' if current_price > ma_20 else '价格在20日线下方'}
+
+### 动量指标
+- **RSI (14日)**: {rsi:.2f}
+- **RSI状态**: {'超买(>70)' if rsi > 70 else '超卖(<30)' if rsi < 30 else '中性(30-70)'}
+
+### MACD指标
+- **MACD**: {macd_value:.4f}
+- **信号线**: {signal_value:.4f}
+- **MACD状态**: {'金叉信号' if macd_value > signal_value else '死叉信号'}
+
+### 波动率分析
+- **年化波动率**: {volatility:.2f}%
+- **波动率等级**: {'极高风险(>100%)' if volatility > 100 else '高风险(50-100%)' if volatility > 50 else '中等风险(20-50%)' if volatility > 20 else '低风险(<20%)'}
+
+## 📊 交易量分析
+- **平均日交易量**: {avg_volume:,.0f}
+- **当前交易量**: {current_volume:,.0f}
+- **交易量比**: {volume_ratio:.2f}x
+- **交易量状态**: {'放量' if volume_ratio > 1.5 else '缩量' if volume_ratio < 0.7 else '正常'}
+
+## 🔍 数据质量检查
+- **数据完整性**: {'完整' if not historical_data.isnull().any().any() else '存在缺失值'}
+- **价格合理性**: {'合理' if current_price > 0 else '异常（价格为0或负数）'}
+- **时间连续性**: {'连续' if len(historical_data) >= 20 else '数据点不足'}
+
+## 💡 技术分析总结
+
+### 趋势分析
+{crypto_name}在分析期间整体呈现{'上涨' if price_change > 0 else '下跌'}趋势，累计涨幅{price_change_percent:+.2f}%。当前价格位于{'20日均线上方，趋势向好' if current_price > ma_20 else '20日均线下方，趋势偏弱'}。
+
+### 动量分析
+RSI指标显示当前市场{'处于超买状态，注意回调风险' if rsi > 70 else '处于超卖状态，可能存在反弹机会' if rsi < 30 else '处于均衡状态，走势相对稳定'}。
+
+### 交易建议
+- **短期策略**: {'关注卖出机会，警惕回调' if rsi > 70 else '关注买入机会，等待拉升' if rsi < 30 else '保持观望，等待明确信号'}
+- **中期策略**: {'谨慎持有，控制仓位' if volatility > 50 else '适度参与，分散投资'}
+- **风险提示**: 数字货币市场波动性极高，{'当前波动率极高，风险极大' if volatility > 100 else '波动性较大，注意风险控制'}
+
+---
+
+*数据来源: Yahoo Finance (yfinance)*
+*技术指标计算基于历史价格数据*
+*投资有风险，请谨慎决策*
+"""
+
+        logger.info(f"✅ [数字货币接口] 成功获取{ticker}数据，报告长度: {len(report)}字符")
+        return report
+
+    except Exception as e:
+        logger.error(f"❌ [数字货币接口] 获取{ticker}数据失败: {e}")
+        return f"""❌ 获取数字货币{ticker}数据失败
+
+错误详情：{str(e)}
+
+请检查：
+1. 数字货币代码是否正确
+2. 网络连接是否正常
+3. yfinance库是否正常安装
+
+常见数字货币代码：BTC、ETH、DOGE、USDT、BNB等
+"""
+
+
+def get_crypto_data_unified_simple(
+    ticker: str,
+    start_date: str,
+    end_date: str
+) -> str:
+    """
+    简化的数字货币数据获取接口，返回结构化JSON数据
+    """
+    import json
+    from datetime import datetime
+    import pandas as pd
+
+    logger.info(f"🪙 [数字货币接口] 开始获取数字货币数据: {ticker}")
+
+    try:
+        # 检查 yfinance 是否可用
+        try:
+            import yfinance as yf
+        except ImportError:
+            return f"❌ yfinance库未安装，请安装后重试"
+
+        # 标准化数字货币代码格式（转换为大写）
+        formatted_code = ticker.strip().upper()
+        yfinance_ticker = f"{formatted_code}-USD"
+
+        logger.info(f"🪙 [数字货币接口] 处理代码: {ticker} -> {yfinance_ticker}")
+
+        # 智能日期范围处理：如果日期范围太小，自动扩展
+        from datetime import timedelta
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        days_diff = (end_dt - start_dt).days
+
+        # 如果日期范围小于30天，自动扩展到30天
+        if days_diff < 30:
+            adjusted_start = end_dt - timedelta(days=30)
+            start_date = adjusted_start.strftime('%Y-%m-%d')
+            logger.info(f"🪙 [数字货币接口] 自动扩展日期范围: {start_date} 至 {end_date}")
+
+        # 获取数字货币数据
+        ticker_obj = yf.Ticker(yfinance_ticker)
+        historical_data = ticker_obj.history(start=start_date, end=end_date)
+
+        if historical_data is None or historical_data.empty:
+            # 尝试使用更长的历史数据
+            logger.warning(f"⚠️ [数字货币接口] 第一次尝试失败，使用更长历史数据")
+            extended_start = end_dt - timedelta(days=60)
+            historical_data = ticker_obj.history(start=extended_start.strftime('%Y-%m-%d'), end=end_date)
+            
+            if historical_data is None or historical_data.empty:
+                return f"❌ 无法获取{ticker}的历史数据，请检查代码是否正确或网络连接"
+
+        # 获取基本信息
+        crypto_name = formatted_code  # 默认使用代码
+        try:
+            info = ticker_obj.info
+            if info and 'longName' in info:
+                crypto_name = info['longName']
+            elif info and 'shortName' in info:
+                crypto_name = info['shortName']
+        except:
+            pass
+
+        # 计算技术指标
+        current_price = float(historical_data['Close'].iloc[-1])
+        price_change = float(historical_data['Close'].iloc[-1] - historical_data['Close'].iloc[0])
+        price_change_percent = float((price_change / historical_data['Close'].iloc[0] * 100))
+
+        # 成交量
+        volume = float(historical_data['Volume'].iloc[-1]) if 'Volume' in historical_data.columns else None
+
+        # 移动平均线
+        ma_5 = float(historical_data['Close'].rolling(window=5).mean().iloc[-1]) if len(historical_data) >= 5 else current_price
+        ma_10 = float(historical_data['Close'].rolling(window=10).mean().iloc[-1]) if len(historical_data) >= 10 else current_price
+        ma_20 = float(historical_data['Close'].rolling(window=20).mean().iloc[-1]) if len(historical_data) >= 20 else current_price
+        ma_60 = float(historical_data['Close'].rolling(window=60).mean().iloc[-1]) if len(historical_data) >= 60 else current_price
+
+        # 返回按照前端期望格式组织的文本数据
+        volume_str = f"{volume:,.0f}" if volume else "未提供"
+
+        result_text = f"""一、股票基本信息
+公司名称：{crypto_name}
+股票代码：{formatted_code}
+所属市场：数字货币
+当前价格：${current_price:.2f}
+涨跌幅：{price_change_percent:+.2f}%
+成交量：{volume_str}
+
+二、技术指标分析
+1. 移动平均线（MA）分析
+MA5：${ma_5:.2f}
+MA10：${ma_10:.2f}
+MA20：${ma_20:.2f}
+MA60：${ma_60:.2f}
+
+数据点数：{len(historical_data)}
+数据来源：Yahoo Finance"""
+
+        logger.info(f"✅ [数字货币接口] 成功获取{ticker}数据")
+        return result_text
+
+    except Exception as e:
+        logger.error(f"❌ [数字货币接口] 获取{ticker}数据失败: {e}")
+        import traceback
+        logger.error(f"❌ [数字货币接口] 异常详情: {traceback.format_exc()}")
+        return f"""一、股票基本信息
+公司名称：{ticker}
+股票代码：{ticker}
+所属市场：数字货币
+当前价格：无法获取
+涨跌幅：无法获取
+成交量：无法获取
+
+二、技术指标分析
+1. 移动平均线（MA）分析
+MA5：无法获取
+MA10：无法获取
+MA20：无法获取
+MA60：无法获取
+
+错误信息：{str(e)}
+数据来源：Yahoo Finance"""

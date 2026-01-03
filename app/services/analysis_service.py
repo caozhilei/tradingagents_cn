@@ -79,17 +79,29 @@ class AnalysisService:
             logger.warning(f"⚠️ 生成新的用户ID: {new_object_id}")
             return PyObjectId(new_object_id)
     
-    def _get_trading_graph(self, config: Dict[str, Any]) -> TradingAgentsGraph:
+    async def _get_trading_graph(self, config: Dict[str, Any]) -> TradingAgentsGraph:
         """获取或创建TradingAgents图实例（带缓存）- 与单股分析保持一致"""
         config_key = json.dumps(config, sort_keys=True)
 
         if config_key not in self._trading_graph_cache:
+            # 尝试从数据库加载默认工作流配置
+            workflow_config = None
+            try:
+                from app.routers.workflow_config import get_default_workflow_config
+                workflow_config_obj = await get_default_workflow_config()
+                if workflow_config_obj:
+                    workflow_config = workflow_config_obj.model_dump()
+                    logger.info("✅ 使用数据库中的默认工作流配置")
+            except Exception as e:
+                logger.warning(f"⚠️ 加载默认工作流配置失败，使用传统模式: {e}")
+            
             # 直接使用完整配置，不再合并DEFAULT_CONFIG（因为create_analysis_config已经处理了）
             # 这与单股分析服务和web目录的方式一致
             self._trading_graph_cache[config_key] = TradingAgentsGraph(
                 selected_analysts=config.get("selected_analysts", ["market", "fundamentals"]),
                 debug=config.get("debug", False),
-                config=config
+                config=config,
+                workflow_config=workflow_config
             )
 
             logger.info(f"创建新的TradingAgents实例: {config.get('llm_provider', 'default')}")
@@ -189,8 +201,26 @@ class AnalysisService:
             # 启动引擎
             progress_tracker.update_progress("🚀 初始化AI分析引擎")
 
-            # 获取TradingAgents实例
-            trading_graph = self._get_trading_graph(config)
+            # 获取TradingAgents实例（同步版本，在线程池中运行）
+            # 由于这是同步函数，直接创建实例而不是调用异步方法
+            from tradingagents.graph.trading_graph import TradingAgentsGraph
+            from app.routers.workflow_config import get_default_workflow_config_sync
+            
+            workflow_config = None
+            try:
+                workflow_config_obj = get_default_workflow_config_sync()
+                if workflow_config_obj:
+                    workflow_config = workflow_config_obj.model_dump()
+                    logger.info("✅ 使用数据库中的默认工作流配置")
+            except Exception as e:
+                logger.warning(f"⚠️ 加载默认工作流配置失败，使用传统模式: {e}")
+            
+            trading_graph = TradingAgentsGraph(
+                selected_analysts=config.get("selected_analysts", ["market", "fundamentals"]),
+                debug=config.get("debug", False),
+                config=config,
+                workflow_config=workflow_config
+            )
 
             # 执行分析
             from datetime import timezone
@@ -308,8 +338,26 @@ class AnalysisService:
                 deep_model_config=deep_model_config     # 传递模型配置
             )
 
-            # 获取TradingAgents实例
-            trading_graph = self._get_trading_graph(config)
+            # 获取TradingAgents实例（同步版本，在线程池中运行）
+            # 由于这是同步函数，直接创建实例而不是调用异步方法
+            from tradingagents.graph.trading_graph import TradingAgentsGraph
+            from app.routers.workflow_config import get_default_workflow_config_sync
+            
+            workflow_config = None
+            try:
+                workflow_config_obj = get_default_workflow_config_sync()
+                if workflow_config_obj:
+                    workflow_config = workflow_config_obj.model_dump()
+                    logger.info("✅ 使用数据库中的默认工作流配置")
+            except Exception as e:
+                logger.warning(f"⚠️ 加载默认工作流配置失败，使用传统模式: {e}")
+            
+            trading_graph = TradingAgentsGraph(
+                selected_analysts=config.get("selected_analysts", ["market", "fundamentals"]),
+                debug=config.get("debug", False),
+                config=config,
+                workflow_config=workflow_config
+            )
 
             # 执行分析
             from datetime import timezone
@@ -677,7 +725,7 @@ class AnalysisService:
                 progress_callback(30, "创建分析图...")
             
             # 获取TradingAgents实例
-            trading_graph = self._get_trading_graph(config)
+            trading_graph = await self._get_trading_graph(config)
             
             if progress_callback:
                 progress_callback(50, "执行股票分析...")

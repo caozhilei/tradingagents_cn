@@ -333,3 +333,14 @@ if __name__ == "__main__":
     asyncio.run(sync_industries_from_mapping())
 
 
+
+
+
+
+
+
+
+
+
+
+

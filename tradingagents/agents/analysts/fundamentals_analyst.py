@@ -95,7 +95,16 @@ def _get_company_name_for_fundamentals(ticker: str, market_info: dict) -> str:
         return f"股票{ticker}"
 
 
-def create_fundamentals_analyst(llm, toolkit):
+def create_fundamentals_analyst(llm, toolkit, user_id=None, template_name=None):
+    """
+    创建基本面分析师
+    
+    Args:
+        llm: 语言模型实例
+        toolkit: 工具包
+        user_id: 用户ID（可选，用于加载用户配置的模板）
+        template_name: 模板名称（可选，指定使用的模板）
+    """
     @log_analyst_module("fundamentals")
     def fundamentals_analyst_node(state):
         logger.debug(f"📊 [DEBUG] ===== 基本面分析师节点开始 =====")

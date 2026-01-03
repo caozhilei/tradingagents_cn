@@ -232,13 +232,33 @@ def calculate_realtime_pe_pb(
             return None
 
         # 5. 从 Tushare pe_ttm 反推 TTM 净利润（使用昨日市值）
+        # 🔥 修复：允许负值PE（亏损股票），只检查是否为None或0
 
-        if not pe_ttm_tushare or pe_ttm_tushare <= 0 or not yesterday_mv_yi or yesterday_mv_yi <= 0:
+        if pe_ttm_tushare is None or pe_ttm_tushare == 0 or not yesterday_mv_yi or yesterday_mv_yi <= 0:
+            if pe_ttm_tushare is not None and pe_ttm_tushare < 0:
+                # PE为负值（亏损股票），直接使用负值，不进行动态计算
+                logger.info(f"   💡 PE为负值（{pe_ttm_tushare:.2f}倍），亏损股票，使用静态PE")
+                # 计算实时市值用于返回
+                realtime_mv_yi = (realtime_price * total_shares_wan) / 10000
+                # 如果PE是负值，直接返回静态PE，不进行动态计算
+                return {
+                    "pe": pe_tushare if pe_tushare is not None else pe_ttm_tushare,
+                    "pb": pb_tushare,
+                    "pe_ttm": pe_ttm_tushare,
+                    "pb_mrq": None,
+                    "price": realtime_price,
+                    "market_cap": realtime_mv_yi,
+                    "updated_at": quote_updated_at,
+                    "source": "stock_basic_info",
+                    "is_realtime": False,
+                    "ttm_net_profit": None
+                }
             logger.warning(f"⚠️ [动态PE计算-失败] 无法反推TTM净利润: pe_ttm={pe_ttm_tushare}, yesterday_mv={yesterday_mv_yi}")
-            logger.warning(f"   💡 提示: 可能是亏损股票（PE为负或空）")
+            logger.warning(f"   💡 提示: PE为空或0，无法进行动态计算")
             return None
 
         # 反推 TTM 净利润（亿元）= 昨日市值 / PE_TTM
+        # 🔥 注意：如果PE是负值，净利润也是负值（亏损）
         ttm_net_profit_yi = yesterday_mv_yi / pe_ttm_tushare
         logger.info(f"   ✓ 反推 TTM净利润: {yesterday_mv_yi:.2f}亿元 / {pe_ttm_tushare:.2f}倍 = {ttm_net_profit_yi:.2f}亿元")
 
@@ -247,6 +267,10 @@ def calculate_realtime_pe_pb(
         logger.info(f"   ✓ 实时市值: {realtime_price:.2f}元 × {total_shares_wan:.2f}万股 / 10000 = {realtime_mv_yi:.2f}亿元")
 
         # 7. 计算动态 PE_TTM = 实时市值 / TTM净利润
+        # 🔥 如果净利润是负值，PE也会是负值（亏损股票）
+        if ttm_net_profit_yi == 0:
+            logger.warning(f"⚠️ [动态PE计算-失败] TTM净利润为0，无法计算PE")
+            return None
         dynamic_pe_ttm = realtime_mv_yi / ttm_net_profit_yi
         logger.info(f"   ✓ 动态PE_TTM计算: {realtime_mv_yi:.2f}亿元 / {ttm_net_profit_yi:.2f}亿元 = {dynamic_pe_ttm:.2f}倍")
 
@@ -382,9 +406,10 @@ def get_pe_pb_with_fallback(
 
     realtime_metrics = calculate_realtime_pe_pb(symbol, db_client)
     if realtime_metrics:
-        # 验证数据合理性
+        # 验证数据合理性（允许负值PE）
         pe = realtime_metrics.get('pe')
         pb = realtime_metrics.get('pb')
+        # 🔥 修复：允许负值PE（亏损股票），只验证是否在合理范围内
         if validate_pe_pb(pe, pb):
             logger.info(f"✅ [PE智能策略-成功] 使用动态PE: PE={pe}, PB={pb}")
             logger.info(f"   └─ 数据来源: {realtime_metrics.get('source')}")
@@ -414,7 +439,8 @@ def get_pe_pb_with_fallback(
             pb_mrq = basic_info.get("pb_mrq")
             updated_at = basic_info.get("updated_at", "N/A")
 
-            if pe_ttm or pe_static or pb_static:
+            # 🔥 修复：允许负值PE（亏损股票），只要不是None就返回
+            if pe_ttm is not None or pe_static is not None or pb_static is not None:
                 logger.info(f"✅ [PE智能策略-成功] 使用Tushare静态PE: PE={pe_static}, PE_TTM={pe_ttm}, PB={pb_static}")
                 logger.info(f"   └─ 数据来源: stock_basic_info (更新时间: {updated_at})")
 

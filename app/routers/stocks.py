@@ -314,8 +314,23 @@ async def get_fundamentals(
                 sort=[("report_period", -1)]  # 按报告期降序，获取该数据源的最新数据
             )
             if financial_data:
-                logger.info(f"✅ 使用数据源 {data_source} 的财务数据 (报告期: {financial_data.get('report_period')})")
-                break
+                # 🔥 检查数据质量：如果关键字段都为空，继续查找下一个数据源
+                has_valid_data = (
+                    financial_data.get("revenue_ttm") is not None or
+                    financial_data.get("revenue") is not None or
+                    financial_data.get("roe") is not None or
+                    financial_data.get("debt_to_assets") is not None or
+                    (financial_data.get("financial_indicators") and (
+                        financial_data["financial_indicators"].get("roe") is not None or
+                        financial_data["financial_indicators"].get("debt_to_assets") is not None
+                    ))
+                )
+                if has_valid_data:
+                    logger.info(f"✅ 使用数据源 {data_source} 的财务数据 (报告期: {financial_data.get('report_period')})")
+                    break
+                else:
+                    logger.warning(f"⚠️ 数据源 {data_source} 的财务数据关键字段为空，继续查找下一个数据源")
+                    financial_data = None  # 重置，继续查找
 
         if not financial_data:
             logger.warning(f"⚠️ 未找到 {code6} 的财务数据")
@@ -348,10 +363,11 @@ async def get_fundamentals(
         "sector": b.get("market"),
 
         # 估值指标（优先使用实时计算，降级到 stock_basic_info）
-        "pe": realtime_metrics.get("pe") or b.get("pe"),
-        "pb": realtime_metrics.get("pb") or b.get("pb"),
-        "pe_ttm": realtime_metrics.get("pe_ttm") or b.get("pe_ttm"),
-        "pb_mrq": realtime_metrics.get("pb_mrq") or b.get("pb_mrq"),
+        # 🔥 修复：使用 is not None 检查，确保负值也能正确传递
+        "pe": realtime_metrics.get("pe") if realtime_metrics.get("pe") is not None else b.get("pe"),
+        "pb": realtime_metrics.get("pb") if realtime_metrics.get("pb") is not None else b.get("pb"),
+        "pe_ttm": realtime_metrics.get("pe_ttm") if realtime_metrics.get("pe_ttm") is not None else b.get("pe_ttm"),
+        "pb_mrq": realtime_metrics.get("pb_mrq") if realtime_metrics.get("pb_mrq") is not None else b.get("pb_mrq"),
 
         # 🔥 市销率（PS）- 动态计算（使用实时市值）
         "ps": None,
@@ -748,3 +764,57 @@ async def get_news(code: str, days: int = 30, limit: int = 50, include_announcem
             }
             return ok(data)
 
+
+@router.get("/{code}/mcp-data", response_model=dict)
+async def get_mcp_data(
+    code: str,
+    force_refresh: bool = Query(False, description="是否强制刷新（跳过缓存）"),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    获取股票 MCP 扩展数据（仅支持A股）
+    
+    返回 MCP 行情快照数据，包括：
+    - 基础行情：价格、涨跌幅、成交量等
+    - 扩展信息：市值、股本、PE等
+    - 盘口信息：买卖五档
+    - 专业指标：资金流向、技术指标等
+    
+    参数：
+    - code: 股票代码（6位数字）
+    - force_refresh: 是否强制刷新
+    """
+    # 检测市场类型
+    market, normalized_code = _detect_market_and_code(code)
+    
+    # 仅支持A股
+    if market != 'CN':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MCP 数据仅支持A股"
+        )
+    
+    try:
+        from app.services.data_sources.mcp_adapter import MCPAdapter
+        
+        adapter = MCPAdapter()
+        if not adapter.is_available():
+            return ok(data=None, message="MCP 服务不可用")
+        
+        # 判断市场代码：1=沪市，0=深市
+        # 600xxx, 688xxx, 689xxx 等为沪市
+        setcode = "1" if normalized_code.startswith(("60", "68", "90")) else "0"
+        
+        # 获取 MCP 行情快照（使用异步版本）
+        result = await adapter.get_quote_async(normalized_code, setcode)
+        
+        if result is None:
+            return ok(data=None, message="MCP 数据获取失败")
+        
+        return ok(data=result)
+    except Exception as e:
+        logger.error(f"获取 MCP 数据失败 code={code}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取 MCP 数据失败: {str(e)}"
+        )

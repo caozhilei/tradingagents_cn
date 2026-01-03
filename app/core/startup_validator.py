@@ -236,7 +236,7 @@ class StartupValidator:
     def _print_validation_result(self):
         """输出验证结果"""
         logger.info("\n" + "=" * 70)
-        logger.info("TradingAgents-CN Configuration Validation Result")
+        logger.info("IRAgents-CN Configuration Validation Result")
         logger.info("=" * 70)
         
         # 必需配置

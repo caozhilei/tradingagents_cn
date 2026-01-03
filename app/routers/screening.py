@@ -7,10 +7,12 @@ from app.routers.auth_db import get_current_user
 
 from app.services.screening_service import ScreeningService, ScreeningParams
 from app.services.enhanced_screening_service import get_enhanced_screening_service
+from app.services.mcp_screening_service import MCPScreeningService
 from app.models.screening import (
     ScreeningCondition, ScreeningRequest as NewScreeningRequest,
     ScreeningResponse as NewScreeningResponse, FieldInfo, BASIC_FIELDS_INFO
 )
+from app.core.response import ok
 
 router = APIRouter(tags=["screening"])
 logger = logging.getLogger("webapi")
@@ -42,6 +44,7 @@ class ScreeningResponse(BaseModel):
 # 服务实例
 svc = ScreeningService()
 enhanced_svc = get_enhanced_screening_service()
+mcp_screening_svc = MCPScreeningService()
 
 
 @router.get("/fields", response_model=FieldConfigResponse)
@@ -482,3 +485,58 @@ async def get_industries(user: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"[get_industries] 获取行业列表失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# MCP智能选股查询
+class MCPQueryRequest(BaseModel):
+    """MCP查询请求"""
+    query: str = Field(..., description="用户的自然语言查询，例如：'PE<20且ROE>15%的股票'、'涨停的股票'等")
+    market: str = Field("AG", description="市场类型：AG=A股，JJ=基金，ZS=指数")
+    max_results: int = Field(50, ge=1, le=200, description="最大返回结果数")
+
+
+class MCPQueryResponse(BaseModel):
+    """MCP查询响应"""
+    success: bool
+    message: str
+    stocks: List[Dict[str, Any]]
+    query: str
+    original_query: str
+    total: int
+    columns: List[str]
+
+
+@router.post("/mcp-query")
+async def mcp_query_stocks(
+    request: MCPQueryRequest,
+    user: dict = Depends(get_current_user)
+):
+    """
+    使用MCP工具进行智能选股查询
+    
+    支持的自然语言查询示例：
+    - "PE<20且ROE>15%的股票"
+    - "涨停的股票"
+    - "涨幅超过5%的股票"
+    - "MACD金叉的股票"
+    - "主力资金净流入的股票"
+    - "半导体行业PE中位数"
+    - "突破20日均线的股票"
+    """
+    try:
+        result = await mcp_screening_svc.query_stocks_with_llm(
+            user_query=request.query,
+            market=request.market,
+            max_results=request.max_results
+        )
+        # 验证结果格式（确保所有字段都存在）
+        try:
+            response_data = MCPQueryResponse(**result)
+            return ok(data=response_data.dict())
+        except Exception as validation_error:
+            logger.error(f"[MCP选股] 响应验证失败: {validation_error}")
+            # 如果验证失败，直接返回结果（确保包含所有必需字段）
+            return ok(data=result)
+    except Exception as e:
+        logger.error(f"[MCP选股] 查询失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"MCP查询失败: {str(e)}")

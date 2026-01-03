@@ -15,7 +15,7 @@ class ConditionalLogic:
         self.max_debate_rounds = max_debate_rounds
         self.max_risk_discuss_rounds = max_risk_discuss_rounds
 
-    def should_continue_market(self, state: AgentState):
+    def should_continue_market_analyst(self, state: AgentState):
         """Determine if market analysis should continue."""
         from tradingagents.utils.logging_init import get_logger
         logger = get_logger("agents")
@@ -30,7 +30,7 @@ class ConditionalLogic:
         # 检查是否已经有市场分析报告
         market_report = state.get("market_report", "")
 
-        logger.info(f"🔀 [条件判断] should_continue_market")
+        logger.info(f"🔀 [条件判断] should_continue_market_analyst")
         logger.info(f"🔀 [条件判断] - 消息数量: {len(messages)}")
         logger.info(f"🔀 [条件判断] - 报告长度: {len(market_report)}")
         logger.info(f"🔧 [死循环修复] - 工具调用次数: {tool_call_count}/{max_tool_calls}")
@@ -60,7 +60,7 @@ class ConditionalLogic:
         logger.info(f"🔀 [条件判断] ✅ 无tool_calls，返回: Msg Clear Market")
         return "Msg Clear Market"
 
-    def should_continue_social(self, state: AgentState):
+    def should_continue_social_media_analyst(self, state: AgentState):
         """Determine if social media analysis should continue."""
         from tradingagents.utils.logging_init import get_logger
         logger = get_logger("agents")
@@ -75,7 +75,7 @@ class ConditionalLogic:
         # 检查是否已经有情绪分析报告
         sentiment_report = state.get("sentiment_report", "")
 
-        logger.info(f"🔀 [条件判断] should_continue_social")
+        logger.info(f"🔀 [条件判断] should_continue_social_media_analyst")
         logger.info(f"🔀 [条件判断] - 消息数量: {len(messages)}")
         logger.info(f"🔀 [条件判断] - 报告长度: {len(sentiment_report)}")
         logger.info(f"🔧 [死循环修复] - 工具调用次数: {tool_call_count}/{max_tool_calls}")
@@ -98,13 +98,13 @@ class ConditionalLogic:
         logger.info(f"🔀 [条件判断] ✅ 无tool_calls，返回: Msg Clear Social")
         return "Msg Clear Social"
 
-    def should_continue_news(self, state: AgentState):
+    def should_continue_news_analyst(self, state: AgentState):
         """Determine if news analysis should continue."""
         from tradingagents.utils.logging_init import get_logger
         logger = get_logger("agents")
 
         messages = state["messages"]
-        last_message = messages[-1]
+        last_message = messages[-1] if messages else None
 
         # 死循环修复: 添加工具调用次数检查
         tool_call_count = state.get("news_tool_call_count", 0)
@@ -113,7 +113,7 @@ class ConditionalLogic:
         # 检查是否已经有新闻分析报告
         news_report = state.get("news_report", "")
 
-        logger.info(f"🔀 [条件判断] should_continue_news")
+        logger.info(f"🔀 [条件判断] should_continue_news_analyst")
         logger.info(f"🔀 [条件判断] - 消息数量: {len(messages)}")
         logger.info(f"🔀 [条件判断] - 报告长度: {len(news_report)}")
         logger.info(f"🔧 [死循环修复] - 工具调用次数: {tool_call_count}/{max_tool_calls}")
@@ -128,15 +128,14 @@ class ConditionalLogic:
             logger.info(f"🔀 [条件判断] ✅ 报告已完成，返回: Msg Clear News")
             return "Msg Clear News"
 
-        # 只有AIMessage才有tool_calls属性
-        if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-            logger.info(f"🔀 [条件判断] 🔧 检测到tool_calls，返回: tools_news")
-            return "tools_news"
+        # 🔧 关键修复：新闻分析师应该总是被执行，除非已经完成
+        # 只有在达到最大工具调用次数时才跳过
+        # 不需要检查tool_calls，因为新闻分析师总是需要执行的
 
-        logger.info(f"🔀 [条件判断] ✅ 无tool_calls，返回: Msg Clear News")
-        return "Msg Clear News"
+        logger.info(f"🔀 [条件判断] 🚀 新闻分析师需要执行，返回: tools_news")
+        return "tools_news"
 
-    def should_continue_fundamentals(self, state: AgentState):
+    def should_continue_fundamentals_analyst(self, state: AgentState):
         """判断基本面分析是否应该继续"""
         from tradingagents.utils.logging_init import get_logger
         logger = get_logger("agents")
@@ -151,7 +150,7 @@ class ConditionalLogic:
         # 检查是否已经有基本面报告
         fundamentals_report = state.get("fundamentals_report", "")
 
-        logger.info(f"🔀 [条件判断] should_continue_fundamentals")
+        logger.info(f"🔀 [条件判断] should_continue_fundamentals_analyst")
         logger.info(f"🔀 [条件判断] - 消息数量: {len(messages)}")
         logger.info(f"🔀 [条件判断] - 报告长度: {len(fundamentals_report)}")
         logger.info(f"🔧 [死循环修复] - 工具调用次数: {tool_call_count}/{max_tool_calls}")

@@ -1,5 +1,5 @@
 """
-TradingAgents-CN Backend Entry Point
+IRAgents-CN Backend Entry Point
 支持 python -m app 启动方式
 """
 
@@ -115,7 +115,7 @@ def main():
     import logging
     logger = logging.getLogger("app.startup")
     
-    logger.info("🚀 Starting TradingAgents-CN Backend...")
+    logger.info("🚀 Starting IRAgents-CN Backend...")
     logger.info(f"📍 Host: {settings.HOST}")
     logger.info(f"🔌 Port: {settings.PORT}")
     logger.info(f"🐛 Debug Mode: {settings.DEBUG}")

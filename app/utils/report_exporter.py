@@ -13,7 +13,9 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
+from app.services.data_sources.mcp_transformer import to_markdown_table
 
 logger = logging.getLogger(__name__)
 
@@ -151,12 +153,34 @@ class ReportExporter:
                     content_parts.append("")
                     content_parts.append("---")
                     content_parts.append("")
+
+        # MCP 数据摘要（可选）
+        mcp_tables: List[Dict[str, Any]] = report_doc.get("mcp_tables", [])
+        if isinstance(mcp_tables, list) and mcp_tables:
+            content_parts.append("## 🛰️ MCP 数据摘要")
+            content_parts.append("")
+            for item in mcp_tables:
+                if not isinstance(item, dict):
+                    continue
+                title = item.get("title") or item.get("name")
+                markdown_table = item.get("markdown")
+                table_data = item.get("table") or item.get("data")
+                if title:
+                    content_parts.append(f"### {title}")
+                    content_parts.append("")
+                if not markdown_table and isinstance(table_data, dict):
+                    markdown_table = to_markdown_table(table_data)
+                if markdown_table:
+                    content_parts.append(markdown_table)
+                    content_parts.append("")
+            content_parts.append("---")
+            content_parts.append("")
         
         # 页脚
         content_parts.append("")
         content_parts.append("---")
         content_parts.append("")
-        content_parts.append("*本报告由 TradingAgents-CN 自动生成*")
+        content_parts.append("*本报告由 IRAgents-CN 自动生成*")
         content_parts.append("")
         
         markdown_content = "\n".join(content_parts)

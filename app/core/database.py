@@ -222,6 +222,9 @@ async def init_database_views_and_indexes():
         # 2. 创建必要的索引
         await create_database_indexes(db)
 
+        # 3. 初始化默认工作流配置
+        await init_default_workflow(db)
+
         logger.info("✅ 数据库视图和索引初始化完成")
 
     except Exception as e:
@@ -358,14 +361,77 @@ async def create_database_indexes(db):
         # market_quotes 的索引
         market_quotes = db["market_quotes"]
         await market_quotes.create_index([("code", 1)], unique=True)
+        await market_quotes.create_index([("symbol", 1), ("timestamp", -1)])
         await market_quotes.create_index([("pct_chg", -1)])
         await market_quotes.create_index([("amount", -1)])
         await market_quotes.create_index([("updated_at", -1)])
+
+        # workflow_configs 的索引
+        workflow_configs = db["workflow_configs"]
+        try:
+            await workflow_configs.create_index([("name", 1)], unique=True)
+            await workflow_configs.create_index([("metadata.created_at", -1)])
+            await workflow_configs.create_index([("metadata.author", 1)])
+            logger.info("✅ 工作流配置索引创建完成")
+        except Exception as e:
+            # 索引可能已存在，记录警告即可
+            logger.debug(f"工作流配置索引创建: {e}")
 
         logger.info("✅ 数据库索引创建完成")
 
     except Exception as e:
         logger.warning(f"⚠️ 创建索引失败: {e}")
+
+
+async def init_default_workflow(db, force_recreate=False):
+    """初始化默认工作流配置
+    
+    Args:
+        db: MongoDB数据库实例
+        force_recreate: 如果为True，删除现有默认工作流后重新创建
+    """
+    try:
+        from tradingagents.graph.default_config import generate_default_config
+        
+        collection = db["workflow_configs"]
+        
+        # 检查是否已存在默认工作流
+        existing_default = await collection.find_one({
+            "metadata.is_default": True
+        })
+        
+        if existing_default and not force_recreate:
+            logger.info("✅ 默认工作流已存在，跳过初始化")
+            return
+        
+        # 如果需要强制重新创建，先删除现有的
+        if existing_default and force_recreate:
+            logger.info("🔄 强制重新创建：删除现有默认工作流...")
+            await collection.delete_many({"metadata.is_default": True})
+            logger.info("✅ 现有默认工作流已删除")
+        
+        # 生成默认配置（使用标准的4个分析师）
+        default_config = generate_default_config(
+            selected_analysts=["market", "social", "news", "fundamentals"]
+        )
+        
+        # 确保元数据包含 is_default 标识
+        if not default_config.metadata.get("is_default"):
+            default_config.metadata["is_default"] = True
+        if not default_config.metadata.get("author"):
+            default_config.metadata["author"] = "system"
+        
+        # 转换为字典并插入数据库
+        workflow_doc = default_config.model_dump()
+        result = await collection.insert_one(workflow_doc)
+        
+        logger.info(f"✅ 默认工作流初始化成功，ID: {result.inserted_id}")
+        logger.info(f"   节点数量: {len(default_config.nodes)}")
+        logger.info(f"   边数量: {len(default_config.edges)}")
+        
+    except Exception as e:
+        logger.warning(f"⚠️ 初始化默认工作流失败: {e}")
+        # 不抛出异常，允许应用继续启动
 
 
 async def close_database():

@@ -2,6 +2,7 @@
 配置管理服务
 """
 
+import os
 import time
 import asyncio
 import logging
@@ -455,7 +456,7 @@ class ConfigService:
                     name="Tushare",
                     type=DataSourceType.TUSHARE,
                     api_key="your-tushare-token",
-                    endpoint="http://api.tushare.pro",
+                    endpoint="http://api.tushare.pro",  # 官方 API 使用 HTTP 而非 HTTPS
                     timeout=30,
                     rate_limit=200,
                     enabled=False,
@@ -1246,13 +1247,90 @@ class ConfigService:
                     logger.info(f"✅ [TEST] Using complete API Key from config (length: {len(api_key)})")
 
                 # 测试 Tushare API
+                # 注意：由于 Tushare Python SDK 1.4.24 使用的旧端点 api.waditu.com 返回 503 错误
+                # 我们使用 HTTP API 直接调用，已验证可以正常工作
                 try:
-                    logger.info(f"🔌 [TEST] Calling Tushare API with token (length: {len(api_key)})")
-                    import tushare as ts
-                    ts.set_token(api_key)
-                    pro = ts.pro_api()
+                    logger.info(f"🔌 [TEST] Calling Tushare HTTP API with token (length: {len(api_key)})")
+                    import requests
+                    import pandas as pd
+                    from datetime import datetime, timedelta
+                    
+                    # 初始化 df 变量
+                    df = pd.DataFrame()
+                    
+                    # 使用 HTTP API 直接调用（绕过 SDK 的端点问题）
+                    # 注意：官方 API 使用 HTTP 而非 HTTPS: http://api.tushare.pro
+                    url = 'http://api.tushare.pro'
+                    proxy = {
+                        'http': os.getenv('HTTP_PROXY'),
+                        'https': os.getenv('HTTPS_PROXY')
+                    }
+                    
                     # 获取交易日历（轻量级测试）
-                    df = pro.trade_cal(exchange='SSE', start_date='20240101', end_date='20240101')
+                    today = datetime.now()
+                    start_date = (today - timedelta(days=30)).strftime('%Y%m%d')
+                    end_date = today.strftime('%Y%m%d')
+                    
+                    # 根据 Tushare 官方文档：https://tushare.pro/document/1?doc_id=131
+                    # 1. exchange 参数：空字符串 '' 表示所有交易所，'SSE'=上交所，'SZSE'=深交所
+                    # 2. is_open 参数：'1'=交易日，'0'=非交易日，不指定则返回所有
+                    data = {
+                        'api_name': 'trade_cal',
+                        'token': api_key,
+                        'params': {
+                            'exchange': '',
+                            'start_date': start_date,
+                            'end_date': end_date,
+                            'is_open': '1'
+                        },
+                        'fields': 'exchange,cal_date,is_open'
+                    }
+                    
+                    logger.info(f"🔍 [TEST] Request URL: {url}, params: {data['params']}")
+                    response = requests.post(url, json=data, proxies=proxy, timeout=10)
+                    result = response.json()
+                    
+                    logger.info(f"🔍 [TEST] API response: code={result.get('code')}, msg={result.get('msg', '')}")
+                    
+                    # 检查响应
+                    if result.get('code') == 0:
+                        items = result.get('data', {}).get('items', [])
+                        fields = result.get('data', {}).get('fields', [])
+                        logger.info(f"🔍 [TEST] Response data: items={len(items) if items else 0}, fields={len(fields) if fields else 0}")
+                        if items and fields:
+                            df = pd.DataFrame(items, columns=fields)
+                            logger.info(f"✅ [TEST] DataFrame created: length={len(df)}, columns={list(df.columns)}")
+                        else:
+                            logger.warning(f"⚠️ [TEST] Empty items or fields: items={bool(items)}, fields={bool(fields)}")
+                            # 尝试不指定 is_open 参数
+                            logger.info(f"🔄 [TEST] Retrying without is_open parameter...")
+                            data['params'].pop('is_open', None)
+                            response = requests.post(url, json=data, proxies=proxy, timeout=10)
+                            result = response.json()
+                            logger.info(f"🔍 [TEST] Retry response: code={result.get('code')}, msg={result.get('msg', '')}")
+                            if result.get('code') == 0:
+                                items = result.get('data', {}).get('items', [])
+                                fields = result.get('data', {}).get('fields', [])
+                                logger.info(f"🔍 [TEST] Retry data: items={len(items) if items else 0}, fields={len(fields) if fields else 0}")
+                                if items and fields:
+                                    df = pd.DataFrame(items, columns=fields)
+                                    logger.info(f"✅ [TEST] DataFrame created from retry: length={len(df)}, columns={list(df.columns)}")
+                    else:
+                        # API 返回错误，尝试不指定 is_open
+                        logger.warning(f"⚠️ [TEST] First attempt failed: {result.get('msg')}, trying without is_open...")
+                        data['params'].pop('is_open', None)
+                        response = requests.post(url, json=data, proxies=proxy, timeout=10)
+                        result = response.json()
+                        logger.info(f"🔍 [TEST] Retry response: code={result.get('code')}, msg={result.get('msg', '')}")
+                        if result.get('code') == 0:
+                            items = result.get('data', {}).get('items', [])
+                            fields = result.get('data', {}).get('fields', [])
+                            logger.info(f"🔍 [TEST] Retry data: items={len(items) if items else 0}, fields={len(fields) if fields else 0}")
+                            if items and fields:
+                                df = pd.DataFrame(items, columns=fields)
+                                logger.info(f"✅ [TEST] DataFrame created from retry: length={len(df)}, columns={list(df.columns)}")
+                    
+                    logger.info(f"🔍 [TEST] Final DataFrame check: is_not_none={df is not None}, length={len(df) if df is not None else 0}, empty={df.empty if df is not None and hasattr(df, 'empty') else 'N/A'}")
 
                     if df is not None and len(df) > 0:
                         response_time = time.time() - start_time
@@ -3764,7 +3842,7 @@ class ConfigService:
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "https://tradingagents.cn",  # OpenRouter要求
-                "X-Title": "TradingAgents-CN"
+                "X-Title": "IRAgents-CN"
             }
 
             data = {

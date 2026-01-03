@@ -346,13 +346,33 @@ def create_news_analyst(llm, toolkit):
             logger.info(f"[新闻分析师] 非Google模型 ({llm.__class__.__name__})，使用标准处理逻辑")
 
             # 检查工具调用情况
-            current_tool_calls = len(result.tool_calls) if hasattr(result, 'tool_calls') else 0
+            current_tool_calls = len(result.tool_calls) if hasattr(result, 'tool_calls') and result.tool_calls else 0
             logger.info(f"[新闻分析师] LLM调用了 {current_tool_calls} 个工具")
             logger.debug(f"📊 [DEBUG] 累计工具调用次数: {tool_call_count}/{max_tool_calls}")
 
-            if current_tool_calls == 0:
-                logger.warning(f"[新闻分析师] ⚠️ {llm.__class__.__name__} 没有调用任何工具，启动补救机制...")
-                logger.warning(f"[新闻分析师] 📄 LLM原始响应内容 (前500字符): {result.content[:500] if hasattr(result, 'content') else 'No content'}")
+            # 🔧 关键修复：检测工具调用文本（LLM返回文本而非实际工具调用）
+            result_content = result.content if hasattr(result, 'content') else ""
+            is_tool_call_text = False
+            if result_content and isinstance(result_content, str):
+                # 检测是否包含工具调用文本模式
+                tool_call_patterns = [
+                    "调用: get_stock_news_unified",
+                    "调用 get_stock_news_unified",
+                    "get_stock_news_unified(stock_code",
+                    "调用工具: get_stock_news_unified"
+                ]
+                is_tool_call_text = any(pattern in result_content for pattern in tool_call_patterns)
+                
+                if is_tool_call_text:
+                    logger.warning(f"[新闻分析师] ⚠️ 检测到工具调用文本而非实际工具调用，内容: {result_content[:200]}")
+                    logger.warning(f"[新闻分析师] 🔧 强制启动补救机制...")
+
+            if current_tool_calls == 0 or is_tool_call_text:
+                if is_tool_call_text:
+                    logger.warning(f"[新闻分析师] ⚠️ {llm.__class__.__name__} 返回了工具调用文本而非实际调用，启动补救机制...")
+                else:
+                    logger.warning(f"[新闻分析师] ⚠️ {llm.__class__.__name__} 没有调用任何工具，启动补救机制...")
+                logger.warning(f"[新闻分析师] 📄 LLM原始响应内容 (前500字符): {result_content[:500] if result_content else 'No content'}")
 
                 try:
                     # 强制获取新闻数据
@@ -393,10 +413,35 @@ def create_news_analyst(llm, toolkit):
                             logger.warning(f"[新闻分析师] ⚠️ 强制补救LLM返回为空，使用原始结果")
                             report = result.content if hasattr(result, 'content') else ""
                     else:
-                        logger.warning(f"[新闻分析师] ⚠️ 统一新闻工具获取失败或内容过短（{len(forced_news) if forced_news else 0}字符），使用原始结果")
+                        logger.warning(f"[新闻分析师] ⚠️ 统一新闻工具获取失败或内容过短（{len(forced_news) if forced_news else 0}字符）")
                         if forced_news:
-                            logger.warning(f"[新闻分析师] 📄 失败的新闻内容: {forced_news}")
-                        report = result.content if hasattr(result, 'content') else ""
+                            logger.warning(f"[新闻分析师] 📄 失败的新闻内容: {forced_news[:200]}")
+                        
+                        # 🔧 关键修复：如果补救失败，不要使用工具调用文本，而是生成一个说明
+                        if is_tool_call_text:
+                            logger.error(f"[新闻分析师] ❌ 补救机制失败，且LLM返回的是工具调用文本，生成错误说明")
+                            report = f"""# BTC 新闻分析报告
+
+## ⚠️ 新闻获取失败
+
+抱歉，无法获取BTC的最新新闻数据。可能的原因：
+1. 网络连接问题
+2. 新闻数据源暂时不可用
+3. API配置问题
+
+建议：
+- 检查网络连接
+- 稍后重试
+- 联系技术支持
+
+## 分析说明
+
+由于无法获取实时新闻数据，本次分析无法完成。请确保：
+- 网络连接正常
+- 新闻数据源配置正确
+- API密钥有效"""
+                        else:
+                            report = result_content if result_content else ""
 
                 except Exception as e:
                     logger.error(f"[新闻分析师] ❌ 强制补救过程失败: {e}")
@@ -404,8 +449,115 @@ def create_news_analyst(llm, toolkit):
                     logger.error(f"[新闻分析师] 📋 异常堆栈: {traceback.format_exc()}")
                     report = result.content if hasattr(result, 'content') else ""
             else:
-                # 有工具调用，直接使用结果
-                report = result.content
+                # 有工具调用，需要执行工具并获取结果
+                logger.info(f"[新闻分析师] 🔧 检测到工具调用，开始执行工具...")
+                
+                try:
+                    from langchain_core.messages import ToolMessage
+                    
+                    # 执行工具调用
+                    tool_messages = []
+                    tool_results = []
+                    
+                    for tool_call in result.tool_calls:
+                        tool_name = tool_call.get('name', '')
+                        tool_args = tool_call.get('args', {})
+                        tool_id = tool_call.get('id', '')
+                        
+                        logger.info(f"[新闻分析师] 🛠️ 执行工具: {tool_name}, 参数: {tool_args}")
+                        
+                        # 找到对应的工具并执行
+                        tool_result = None
+                        for tool in tools:
+                            if hasattr(tool, 'name') and tool.name == tool_name:
+                                try:
+                                    # 执行工具
+                                    if hasattr(tool, 'invoke'):
+                                        tool_result = tool.invoke(tool_args)
+                                    elif hasattr(tool, '_run'):
+                                        tool_result = tool._run(**tool_args)
+                                    else:
+                                        tool_result = tool(**tool_args)
+                                    
+                                    logger.info(f"[新闻分析师] ✅ 工具执行成功: {tool_name}, 结果长度: {len(str(tool_result)) if tool_result else 0} 字符")
+                                    break
+                                except Exception as tool_error:
+                                    logger.error(f"[新闻分析师] ❌ 工具执行失败: {tool_error}")
+                                    import traceback
+                                    logger.error(f"[新闻分析师] 📋 异常堆栈: {traceback.format_exc()}")
+                                    tool_result = f"工具执行失败: {str(tool_error)}"
+                                    break
+                        
+                        if tool_result is None:
+                            tool_result = f"未找到工具: {tool_name}"
+                            logger.warning(f"[新闻分析师] ⚠️ 未找到工具: {tool_name}")
+                        
+                        # 创建工具消息
+                        tool_message = ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_id
+                        )
+                        tool_messages.append(tool_message)
+                        tool_results.append(tool_result)
+                    
+                    logger.info(f"[新闻分析师] 🔧 工具调用完成，成功执行 {len(tool_results)} 个工具")
+                    
+                    # 基于工具结果生成最终分析报告
+                    logger.info(f"[新闻分析师] 🚀 基于工具结果生成最终分析报告...")
+                    
+                    # 构建消息序列
+                    from langchain_core.messages import HumanMessage
+                    
+                    analysis_messages = []
+                    
+                    # 添加历史消息（如果有）
+                    if "messages" in state and state["messages"]:
+                        analysis_messages.extend(state["messages"])
+                    
+                    # 添加工具调用消息
+                    analysis_messages.append(result)
+                    
+                    # 添加工具结果消息
+                    analysis_messages.extend(tool_messages)
+                    
+                    # 添加分析提示
+                    analysis_prompt = f"""请基于上述工具获取的最新新闻数据，对股票 {ticker}（{company_name}）进行详细的新闻分析。
+
+{system_message}
+
+请撰写详细的中文分析报告，包括：
+1. 新闻事件总结
+2. 对股票的影响分析
+3. 市场情绪评估
+4. 投资建议"""
+                    
+                    analysis_messages.append(HumanMessage(content=analysis_prompt))
+                    
+                    # 调用 LLM 生成最终分析
+                    logger.info(f"[新闻分析师] 📝 调用LLM生成最终分析，消息数量: {len(analysis_messages)}")
+                    final_result = llm.invoke(analysis_messages)
+                    
+                    if hasattr(final_result, 'content') and final_result.content:
+                        report = final_result.content
+                        logger.info(f"[新闻分析师] ✅ 成功生成分析报告，长度: {len(report)} 字符")
+                        logger.info(f"[新闻分析师] 📄 报告预览 (前300字符): {report[:300]}")
+                    else:
+                        logger.warning(f"[新闻分析师] ⚠️ LLM返回为空，使用工具结果")
+                        # 如果LLM返回为空，至少返回工具结果
+                        if tool_results:
+                            report = "\n\n".join([str(r) for r in tool_results])
+                        else:
+                            report = result.content if hasattr(result, 'content') else ""
+                
+                except Exception as e:
+                    logger.error(f"[新闻分析师] ❌ 工具调用处理失败: {e}")
+                    import traceback
+                    logger.error(f"[新闻分析师] 📋 异常堆栈: {traceback.format_exc()}")
+                    # 降级处理：尝试直接使用工具结果或原始结果
+                    if 'tool_results' in locals() and tool_results:
+                        report = "\n\n".join([str(r) for r in tool_results])
+                    else:
+                        report = result.content if hasattr(result, 'content') else ""
         
         total_time_taken = (datetime.now() - start_time).total_seconds()
         logger.info(f"[新闻分析师] 新闻分析完成，总耗时: {total_time_taken:.2f}秒")

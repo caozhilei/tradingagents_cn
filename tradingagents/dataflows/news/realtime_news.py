@@ -144,6 +144,24 @@ class RealtimeNewsAggregator:
 
         return sorted_news
 
+    def _clean_html_tags(self, text: str) -> str:
+        """清理HTML标签，特别是<em>标签"""
+        import re
+
+        if not text:
+            return text
+
+        # 移除 <em> 和 </em> 标签（只移除标签，不移除内容）
+        text = re.sub(r'</?em[^>]*>', '', text, flags=re.IGNORECASE)
+
+        # 移除其他常见的HTML标签
+        text = re.sub(r'<[^>]+>', '', text)
+
+        # 清理多余的空白字符
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        return text
+
     def _get_finnhub_realtime_news(self, ticker: str, hours_back: int) -> List[NewsItem]:
         """获取FinnHub实时新闻"""
         if not self.finnhub_key:
@@ -789,10 +807,15 @@ def get_realtime_stock_news(ticker: str, curr_date: str, hours_back: int = 6) ->
                 for idx, (_, row) in enumerate(news_df.iterrows()):
                     if idx < 3:  # 只记录前3条的详细信息
                         logger.info(f"[新闻分析] 第{idx+1}条新闻: 标题={row.get('新闻标题', '无标题')}, 时间={row.get('发布时间', '无时间')}")
-                    report += f"### {row.get('新闻标题', '')}\n"
+
+                    # 清理HTML标签（特别是<em>标签）
+                    title = self._clean_html_tags(str(row.get('新闻标题', '')))
+                    content = self._clean_html_tags(str(row.get('新闻内容', '无内容')))
+
+                    report += f"### {title}\n"
                     report += f"📅 {row.get('发布时间', '')}\n"
                     report += f"🔗 {row.get('新闻链接', '')}\n\n"
-                    report += f"{row.get('新闻内容', '无内容')}\n\n"
+                    report += f"{content}\n\n"
 
                 total_time_taken = (datetime.now(ZoneInfo(get_timezone_name())) - start_total_time).total_seconds()
                 logger.info(f"[新闻分析] 成功生成 {ticker} 的新闻报告，总耗时 {total_time_taken:.2f} 秒，新闻来源: 东方财富")
@@ -889,10 +912,14 @@ def get_realtime_stock_news(ticker: str, curr_date: str, hours_back: int = 6) ->
                 logger.info(f"[新闻分析] 新闻标题示例: {', '.join(sample_titles)}")
 
                 for _, row in news_df.iterrows():
-                    report += f"### {row.get('新闻标题', '')}\n"
+                    # 清理HTML标签
+                    title = self._clean_html_tags(str(row.get('新闻标题', '')))
+                    content = self._clean_html_tags(str(row.get('新闻内容', '无内容')))
+
+                    report += f"### {title}\n"
                     report += f"📅 {row.get('发布时间', '')}\n"
                     report += f"🔗 {row.get('新闻链接', '')}\n\n"
-                    report += f"{row.get('新闻内容', '无内容')}\n\n"
+                    report += f"{content}\n\n"
 
                 logger.info(f"[新闻分析] 成功生成东方财富新闻报告，新闻来源: 东方财富")
                 return report

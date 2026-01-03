@@ -46,6 +46,7 @@ class DataSourceCode(str, Enum):
     # ==================== 专业数据源 ====================
     WIND = "wind"        # Wind 万得 - 专业金融终端
     CHOICE = "choice"    # 东方财富 Choice - 专业金融数据
+    MCP_TDX = "mcp_tdx"  # 阿里百炼 MCP - 通达信问小达
     
     # ==================== 其他数据源 ====================
     QUANDL = "quandl"        # Quandl - 经济和金融数据
@@ -248,6 +249,21 @@ DATA_SOURCE_REGISTRY: Dict[str, DataSourceInfo] = {
         is_free=False,  # 专业版需付费
         official_website="http://choice.eastmoney.com",
         features=["专业数据", "A股专注", "高质量数据", "专业分析"],
+    ),
+    
+    # MCP 通达信问小达
+    DataSourceCode.MCP_TDX: DataSourceInfo(
+        code=DataSourceCode.MCP_TDX,
+        name="MCP_TDX",
+        display_name="MCP 通达信问小达",
+        provider="Aliyun Bailian MCP",
+        description="通过 MCP SSE 访问通达信问小达工具，支持行情快照与问答榜单",
+        supported_markets=["a_shares"],
+        requires_api_key=True,
+        is_free=False,
+        official_website="https://bailian.console.aliyuncs.com",
+        documentation_url="https://dashscope.aliyuncs.com/api/v1/mcps/tendency-software/sse",
+        features=["实时行情", "五档盘口", "扩展估值", "问答榜单"],
     ),
     
     # Quandl

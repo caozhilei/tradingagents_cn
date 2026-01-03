@@ -2304,3 +2304,135 @@ async def delete_database_config(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"删除数据库配置失败: {str(e)}"
         )
+
+
+# ===== 新闻源配置端点 =====
+
+class NewsSourceConfigModel(BaseModel):
+    """新闻源配置模型"""
+    name: str
+    display_name: str
+    enabled: bool = True
+    priority: int = 1
+    description: str = ""
+
+
+class MarketNewsConfigModel(BaseModel):
+    """市场新闻配置模型"""
+    market_type: str
+    display_name: str
+    sources: List[NewsSourceConfigModel] = []
+
+
+@router.get("/news-sources", response_model=List[MarketNewsConfigModel])
+async def get_news_source_configs(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    获取新闻源配置
+    """
+    try:
+        import json
+        from pathlib import Path
+        from tradingagents.config.config_manager import config_manager
+
+        config_file = config_manager.config_dir / "news_sources.json"
+
+        if config_file.exists():
+            with open(config_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data
+        else:
+            # 返回默认配置
+            default_configs = [
+                {
+                    "market_type": "A股",
+                    "display_name": "A股市场",
+                    "sources": [
+                        {"name": "database_cache", "display_name": "数据库缓存", "enabled": True, "priority": 1, "description": "本地缓存的新闻数据，速度最快"},
+                        {"name": "eastmoney_realtime", "display_name": "东方财富实时", "enabled": True, "priority": 2, "description": "东方财富网实时新闻，专业A股资讯"},
+                        {"name": "google_news", "display_name": "Google新闻", "enabled": True, "priority": 3, "description": "Google中文新闻搜索"},
+                        {"name": "openai_news", "display_name": "OpenAI全球新闻", "enabled": True, "priority": 4, "description": "OpenAI生成的全球财经新闻"}
+                    ]
+                },
+                {
+                    "market_type": "港股",
+                    "display_name": "港股市场",
+                    "sources": [
+                        {"name": "database_cache", "display_name": "数据库缓存", "enabled": True, "priority": 1, "description": "本地缓存的新闻数据，速度最快"},
+                        {"name": "google_news", "display_name": "Google新闻", "enabled": True, "priority": 2, "description": "Google英文新闻搜索"},
+                        {"name": "openai_news", "display_name": "OpenAI全球新闻", "enabled": True, "priority": 3, "description": "OpenAI生成的全球财经新闻"},
+                        {"name": "realtime_hk", "display_name": "实时港股新闻", "enabled": True, "priority": 4, "description": "专业港股新闻聚合"}
+                    ]
+                },
+                {
+                    "market_type": "美股",
+                    "display_name": "美股市场",
+                    "sources": [
+                        {"name": "database_cache", "display_name": "数据库缓存", "enabled": True, "priority": 1, "description": "本地缓存的新闻数据，速度最快"},
+                        {"name": "openai_news", "display_name": "OpenAI全球新闻", "enabled": True, "priority": 2, "description": "OpenAI生成的全球财经新闻"},
+                        {"name": "google_news", "display_name": "Google新闻", "enabled": True, "priority": 3, "description": "Google英文新闻搜索"},
+                        {"name": "finnhub_news", "display_name": "FinnHub新闻", "enabled": True, "priority": 4, "description": "专业美股新闻API"}
+                    ]
+                },
+                {
+                    "market_type": "数字货币",
+                    "display_name": "数字货币市场",
+                    "sources": [
+                        {"name": "database_cache", "display_name": "数据库缓存", "enabled": True, "priority": 1, "description": "本地缓存的新闻数据，速度最快"},
+                        {"name": "google_news", "display_name": "Google数字货币新闻", "enabled": True, "priority": 2, "description": "Google数字货币新闻搜索"},
+                        {"name": "openai_news", "display_name": "OpenAI全球新闻", "enabled": True, "priority": 3, "description": "OpenAI生成的全球财经新闻"},
+                        {"name": "newsapi_crypto", "display_name": "NewsAPI数字货币", "enabled": True, "priority": 4, "description": "专业数字货币新闻API"},
+                        {"name": "reddit_crypto", "display_name": "Reddit数字货币讨论", "enabled": True, "priority": 5, "description": "Reddit社区数字货币讨论"}
+                    ]
+                }
+            ]
+            return default_configs
+
+    except Exception as e:
+        logger.error(f"❌ 获取新闻源配置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取新闻源配置失败: {str(e)}"
+        )
+
+
+@router.post("/news-sources", response_model=dict)
+async def save_news_source_configs(
+    configs: List[MarketNewsConfigModel],
+    current_user: User = Depends(get_current_user)
+):
+    """
+    保存新闻源配置
+    """
+    try:
+        import json
+        from pathlib import Path
+        from tradingagents.config.config_manager import config_manager
+
+        config_file = config_manager.config_dir / "news_sources.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # 转换为字典格式
+        data = [config.dict() for config in configs]
+
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        await log_operation(
+            user_id=current_user["id"],
+            username=current_user.get("username", "unknown"),
+            action_type=ActionType.CONFIG_MANAGEMENT,
+            action="保存新闻源配置",
+            details={"configs_count": len(configs)}
+        )
+
+        logger.info(f"✅ 新闻源配置已保存: {len(configs)} 个市场配置")
+        return {"success": True, "message": "新闻源配置已保存"}
+
+    except Exception as e:
+        logger.error(f"❌ 保存新闻源配置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"保存新闻源配置失败: {str(e)}"
+        )

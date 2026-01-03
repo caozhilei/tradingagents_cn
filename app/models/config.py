@@ -168,6 +168,7 @@ class DataSourceType(str, Enum):
     # 专业数据源
     WIND = "wind"
     CHOICE = "choice"
+    MCP_TDX = "mcp_tdx"
 
     # 其他数据源
     QUANDL = "quandl"

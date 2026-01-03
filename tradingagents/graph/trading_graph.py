@@ -195,9 +195,10 @@ class TradingAgentsGraph:
 
     def __init__(
         self,
-        selected_analysts=["market", "social", "news", "fundamentals"],
+        selected_analysts=["market_analyst", "social_media_analyst", "news_analyst", "fundamentals_analyst"],
         debug=False,
         config: Dict[str, Any] = None,
+        workflow_config=None,
     ):
         """Initialize the trading agents graph and components.
 
@@ -205,6 +206,8 @@ class TradingAgentsGraph:
             selected_analysts: List of analyst types to include
             debug: Whether to run in debug mode
             config: Configuration dictionary. If None, uses default config
+            workflow_config: Optional workflow configuration (WorkflowConfig object or dict).
+                           If provided, uses configuration-based graph building instead of selected_analysts.
         """
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
@@ -809,7 +812,15 @@ class TradingAgentsGraph:
         self.log_states_dict = {}  # date to full state dict
 
         # Set up the graph
-        self.graph = self.graph_setup.setup_graph(selected_analysts)
+        if workflow_config is not None:
+            # 使用配置驱动的工作流
+            from .workflow_config import WorkflowConfig
+            if isinstance(workflow_config, dict):
+                workflow_config = WorkflowConfig(**workflow_config)
+            self.graph = self.graph_setup.setup_graph_from_config(workflow_config)
+        else:
+            # 使用传统的静态工作流（向后兼容）
+            self.graph = self.graph_setup.setup_graph(selected_analysts)
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources.
@@ -862,9 +873,6 @@ class TradingAgentsGraph:
                     self.toolkit.get_simfin_balance_sheet,
                     self.toolkit.get_simfin_cashflow,
                     self.toolkit.get_simfin_income_stmt,
-                    # 中国市场工具（备用）
-                    self.toolkit.get_china_stock_data,
-                    self.toolkit.get_china_fundamentals,
                 ]
             ),
         }

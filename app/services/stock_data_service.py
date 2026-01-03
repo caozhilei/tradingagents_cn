@@ -251,6 +251,13 @@ class StockDataService:
 
             # 添加更新时间
             quote_data["updated_at"] = datetime.utcnow()
+            # 控制是否持久化原始 MCP 数据
+            persist_raw = os.getenv("MCP_RAW_PERSIST", "false").lower() == "true"
+            if not persist_raw:
+                quote_data.pop("mcp_raw", None)
+                quote_data.pop("mcp_bsp", None)
+                quote_data.pop("mcp_pro_info", None)
+                quote_data.pop("mcp_stat_info", None)
 
             # 🔥 确保 symbol 和 code 字段都存在（兼容旧索引）
             if "symbol" not in quote_data:

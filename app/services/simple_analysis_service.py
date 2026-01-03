@@ -6,6 +6,7 @@
 import asyncio
 import uuid
 import logging
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -704,7 +705,7 @@ class SimpleAnalysisService:
             logger.warning(f"⚠️ 生成新的用户ID: {new_object_id}")
             return PyObjectId(new_object_id)
 
-    def _get_trading_graph(self, config: Dict[str, Any]) -> TradingAgentsGraph:
+    async def _get_trading_graph(self, config: Dict[str, Any]) -> TradingAgentsGraph:
         """获取或创建TradingAgents实例
 
         ⚠️ 注意：为了避免并发执行时的数据混淆，每次都创建新实例
@@ -717,10 +718,22 @@ class SimpleAnalysisService:
         # 不再使用缓存，因为 TradingAgentsGraph 有可变的实例变量
         logger.info(f"🔧 创建新的TradingAgents实例（并发安全模式）...")
 
+        # 尝试从数据库加载默认工作流配置（同步版本，用于同步上下文）
+        workflow_config = None
+        try:
+            from app.routers.workflow_config import get_default_workflow_config_sync
+            workflow_config_obj = get_default_workflow_config_sync()
+            if workflow_config_obj:
+                workflow_config = workflow_config_obj.model_dump()
+                logger.info("✅ 使用数据库中的默认工作流配置")
+        except Exception as e:
+            logger.warning(f"⚠️ 加载默认工作流配置失败，使用传统模式: {e}")
+
         trading_graph = TradingAgentsGraph(
             selected_analysts=config.get("selected_analysts", ["market", "fundamentals"]),
             debug=config.get("debug", False),
-            config=config
+            config=config,
+            workflow_config=workflow_config
         )
 
         logger.info(f"✅ TradingAgents实例创建成功（实例ID: {id(trading_graph)}）")
@@ -835,7 +848,41 @@ class SimpleAnalysisService:
             from datetime import datetime
 
             # 获取市场类型
-            market_type = request.parameters.market_type if request.parameters else "A股"
+            market_type_raw = request.parameters.market_type if request.parameters else "A股"
+            
+            # 🔥 修复编码问题：标准化市场类型
+            # 前端可能传递的是乱码字符串，需要标准化处理
+            market_type = market_type_raw
+            if market_type_raw:
+                # 方法1: 直接字符串比较（最常见情况）
+                if market_type_raw in ['A股', '美股', '港股', '数字货币']:
+                    market_type = market_type_raw
+                else:
+                    # 方法2: 尝试通过字节串识别（处理编码问题）
+                    try:
+                        market_type_bytes = market_type_raw.encode('utf-8') if isinstance(market_type_raw, str) else market_type_raw
+                        # '数字货币' 的正确 UTF-8 字节串: b'\xe6\x95\xb0\xe5\xad\x97\xe8\xb4\xa7\xe5\xb8\x81'
+                        if market_type_bytes == b'\xe6\x95\xb0\xe5\xad\x97\xe8\xb4\xa7\xe5\xb8\x81':
+                            market_type = '数字货币'
+                        # 其他市场类型的字节串
+                        elif market_type_bytes == b'A\xe8\x82\xa1':  # 'A股'
+                            market_type = 'A股'
+                        elif market_type_bytes == b'\xe7\xbe\x8e\xe8\x82\xa1':  # '美股'
+                            market_type = '美股'
+                        elif market_type_bytes == b'\xe6\xb8\xaf\xe8\x82\xa1':  # '港股'
+                            market_type = '港股'
+                        # 方法3: 如果是4个字符的乱码字符串，且长度匹配，可能是编码问题
+                        # 在这种情况下，尝试通过其他方式识别（比如通过股票代码推断）
+                        # 方法3: 如果是4个字符的字符串，且股票代码符合数字货币格式，推断为数字货币
+                        elif stock_code and isinstance(market_type_raw, str):
+                            # 如果股票代码看起来像数字货币（2-10个字母数字组合），假设是数字货币
+                            if re.match(r'^[A-Z0-9]{2,10}$', stock_code.upper()) and re.match(r'.*[A-Z].*', stock_code.upper()):
+                                logger.info(f"🔍 [方法3] 通过股票代码推断市场类型: {stock_code} (原始market_type: {repr(market_type_raw)}) -> 数字货币")
+                                market_type = '数字货币'
+                    except Exception as e:
+                        logger.warning(f"⚠️ 市场类型编码处理失败: {e}, 使用原始值: {repr(market_type_raw)}")
+            
+            logger.info(f"🔍 [市场类型] 原始: {repr(market_type_raw)}, 标准化后: {repr(market_type)}")
 
             # 获取分析日期并转换为字符串格式
             analysis_date = request.parameters.analysis_date if request.parameters else None
@@ -1256,7 +1303,20 @@ class SimpleAnalysisService:
 
             # 初始化分析引擎 - 对应步骤4 "🚀 启动引擎" (8-10%)
             update_progress_sync(9, "🚀 初始化AI分析引擎", "engine_initialization")
-            trading_graph = self._get_trading_graph(config)
+            # 注意：_get_trading_graph 现在是异步的，但在同步上下文中我们需要直接调用
+            # 由于 _run_analysis_sync 是同步函数，我们直接在这里创建 TradingAgentsGraph
+            from app.routers.workflow_config import get_default_workflow_config_sync
+            workflow_config_obj = get_default_workflow_config_sync()
+            workflow_config = workflow_config_obj.model_dump() if workflow_config_obj else None
+            if workflow_config:
+                logger.info("✅ 使用数据库中的默认工作流配置")
+            
+            trading_graph = TradingAgentsGraph(
+                selected_analysts=config.get("selected_analysts", ["market", "fundamentals"]),
+                debug=config.get("debug", False),
+                config=config,
+                workflow_config=workflow_config
+            )
 
             # 🔍 验证TradingGraph实例中的配置
             logger.info(f"🔍 [引擎验证] TradingGraph配置中的快速模型: {trading_graph.config.get('quick_think_llm')}")

@@ -17,6 +17,7 @@ class StockMarket(Enum):
     CHINA_A = "china_a"      # 中国A股
     HONG_KONG = "hong_kong"  # 港股
     US = "us"                # 美股
+    CRYPTO = "crypto"        # 数字货币
     UNKNOWN = "unknown"      # 未知
 
 
@@ -47,9 +48,26 @@ class StockUtils:
         if re.match(r'^\d{4,5}\.HK$', ticker) or re.match(r'^\d{4,5}$', ticker):
             return StockMarket.HONG_KONG
 
-        # 美股：1-5位字母
+        # 数字货币：优先识别常见数字货币代码
+        # 常见的数字货币代码列表（需要持续更新）
+        crypto_codes = {
+            'BTC', 'ETH', 'DOGE', 'USDT', 'BNB', 'ADA', 'SOL', 'DOT', 'AVAX', 'LINK',
+            'UNI', 'ALGO', 'VET', 'ICP', 'FIL', 'TRX', 'ETC', 'XLM', 'THETA', 'HBAR',
+            'NEAR', 'FLOW', 'MANA', 'SAND', 'AXS', 'GALA', 'ENJ', 'BAT', 'CHZ', 'GAL',
+            'YGG', 'APE', 'LRC', 'ENS', 'LOOKS', 'BEAN', 'PEPE', 'SHIB', 'FLOKI'
+        }
+
+        if ticker in crypto_codes:
+            return StockMarket.CRYPTO
+
+        # 美股：1-5位字母（排除已知的数字货币代码）
         if re.match(r'^[A-Z]{1,5}$', ticker):
             return StockMarket.US
+
+        # 其他数字货币：3-4个字母，但排除常见的公司代码
+        company_codes = {'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NFLX', 'NVDA'}
+        if re.match(r'^[A-Z]{3,4}$', ticker) and ticker not in company_codes:
+            return StockMarket.CRYPTO
 
         return StockMarket.UNKNOWN
     
@@ -181,9 +199,10 @@ class StockUtils:
             StockMarket.CHINA_A: "中国A股",
             StockMarket.HONG_KONG: "港股",
             StockMarket.US: "美股",
+            StockMarket.CRYPTO: "数字货币",
             StockMarket.UNKNOWN: "未知市场"
         }
-        
+
         return {
             "ticker": ticker,
             "market": market.value,
@@ -193,7 +212,8 @@ class StockUtils:
             "data_source": data_source,
             "is_china": market == StockMarket.CHINA_A,
             "is_hk": market == StockMarket.HONG_KONG,
-            "is_us": market == StockMarket.US
+            "is_us": market == StockMarket.US,
+            "is_crypto": market == StockMarket.CRYPTO
         }
 
 

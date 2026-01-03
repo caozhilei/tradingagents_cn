@@ -54,7 +54,8 @@ async def get_data_sources_status():
                 "tdx": "通达信实时行情接口，提供A股实时行情和历史K线数据，完全免费且无需API Key",
                 "tushare": "专业金融数据API，提供高质量的A股数据和财务指标",
                 "akshare": "开源金融数据库，提供基础的股票信息",
-                "baostock": "免费开源的证券数据平台，提供历史数据"
+                "baostock": "免费开源的证券数据平台，提供历史数据",
+                "mcp_tdx": "阿里百炼 MCP 通达信问小达，SSE 行情/问答",
             }
 
             status_item = {
@@ -108,7 +109,8 @@ async def get_current_data_source():
             "tdx": "通达信实时行情接口",
             "tushare": "专业金融数据API",
             "akshare": "开源金融数据库",
-            "baostock": "免费证券数据平台"
+            "baostock": "免费证券数据平台",
+            "mcp_tdx": "MCP 通达信问小达",
         }
 
         result = {
@@ -208,56 +210,129 @@ async def _test_single_adapter(adapter) -> dict:
     test_timeout = 10
 
     try:
-        # 测试连通性 - 强制重新连接以使用最新配置
+        # 测试连通性
         logger.info(f"🧪 测试 {adapter.name} 连通性 (超时: {test_timeout}秒)...")
 
         try:
-            # 对于 Tushare，强制重新连接以使用最新的数据库配置
-            if adapter.name == "tushare" and hasattr(adapter, '_provider'):
-                logger.info(f"🔄 强制 {adapter.name} 重新连接以使用最新配置...")
-                provider = adapter._provider
-                if provider:
-                    # 重置连接状态
-                    provider.connected = False
-                    provider.token_source = None
-                    # 重新连接
-                    await asyncio.wait_for(
-                        asyncio.to_thread(provider.connect_sync),
-                        timeout=test_timeout
+            # 对于 Tushare，使用 HTTP API 直接测试（与数据源配置页面相同）
+            if adapter.name == "tushare":
+                logger.info(f"🔄 {adapter.name} 使用 HTTP API 直接测试...")
+
+                # 获取 API Key
+                api_key = None
+                token_source = None
+
+                # 优先从数据库获取 Token
+                try:
+                    from app.core.database import get_mongo_db_sync
+                    db = get_mongo_db_sync()
+                    config_collection = db.system_configs
+                    config_data = config_collection.find_one(
+                        {"is_active": True},
+                        sort=[("version", -1)]
                     )
 
-            # 在线程池中运行 is_available() 检查
-            is_available = await asyncio.wait_for(
-                asyncio.to_thread(adapter.is_available),
-                timeout=test_timeout
-            )
+                    if config_data and config_data.get('data_source_configs'):
+                        for ds_config in config_data['data_source_configs']:
+                            if ds_config.get('type') == 'tushare':
+                                api_key = ds_config.get('api_key')
+                                if api_key and not api_key.startswith("your_"):
+                                    token_source = 'database'
+                                    break
+                except Exception as e:
+                    logger.debug(f"从数据库获取 Tushare Token 失败: {e}")
 
-            if is_available:
-                result["available"] = True
+                # 如果数据库中没有，从环境变量获取
+                if not api_key:
+                    import os
+                    env_token = os.getenv('TUSHARE_TOKEN')
+                    if env_token:
+                        api_key = env_token.strip().strip('"').strip("'")
+                        token_source = 'env'
 
-                # 获取 Token 来源（仅 Tushare）
-                token_source = None
-                if adapter.name == "tushare" and hasattr(adapter, 'get_token_source'):
-                    token_source = adapter.get_token_source()
+                if not api_key:
+                    result["available"] = False
+                    result["message"] = "❌ 未配置 API Key"
+                    logger.warning(f"⚠️ {adapter.name} 未配置 API Key")
+                    return result
 
-                if token_source == 'database':
-                    result["message"] = "✅ 连接成功 (Token来源: 数据库)"
-                    result["token_source"] = "database"
-                elif token_source == 'env':
-                    result["message"] = "✅ 连接成功 (Token来源: .env)"
-                    result["token_source"] = "env"
+                # 使用 HTTP API 直接测试（与数据源配置页面相同）
+                import requests
+                from datetime import datetime, timedelta
+
+                url = 'http://api.tushare.pro'
+                proxy = {
+                    'http': os.getenv('HTTP_PROXY'),
+                    'https': os.getenv('HTTPS_PROXY')
+                }
+
+                # 获取交易日历（轻量级测试）
+                today = datetime.now()
+                start_date = (today - timedelta(days=30)).strftime('%Y%m%d')
+                end_date = today.strftime('%Y%m%d')
+
+                data = {
+                    'api_name': 'trade_cal',
+                    'token': api_key,
+                    'params': {
+                        'exchange': '',
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'is_open': '1'
+                    },
+                    'fields': 'exchange,cal_date,is_open'
+                }
+
+                logger.info(f"🔍 [TEST] Tushare HTTP API 请求: {url}")
+                response = requests.post(url, json=data, proxies=proxy, timeout=test_timeout)
+                result_data = response.json()
+
+                if result_data.get('code') == 0:
+                    items = result_data.get('data', {}).get('items', [])
+                    if items:
+                        result["available"] = True
+                        if token_source == 'database':
+                            result["message"] = "✅ 连接成功 (Token来源: 数据库)"
+                            result["token_source"] = "database"
+                        elif token_source == 'env':
+                            result["message"] = "✅ 连接成功 (Token来源: .env)"
+                            result["token_source"] = "env"
+                        else:
+                            result["message"] = "✅ 连接成功"
+                        logger.info(f"✅ {adapter.name} HTTP API 测试成功，Token来源: {token_source}")
+                    else:
+                        result["available"] = False
+                        result["message"] = "❌ API 返回空数据"
+                        logger.warning(f"⚠️ {adapter.name} API 返回空数据")
                 else:
-                    result["message"] = "✅ 连接成功"
-
-                logger.info(f"✅ {adapter.name} 连通性测试成功，Token来源: {token_source}")
+                    result["available"] = False
+                    result["message"] = f"❌ API 错误: {result_data.get('msg', 'Unknown error')}"
+                    logger.warning(f"⚠️ {adapter.name} API 错误: {result_data.get('msg', 'Unknown error')}")
             else:
-                result["available"] = False
-                result["message"] = "❌ 数据源不可用"
-                logger.warning(f"⚠️ {adapter.name} 不可用")
+                # 其他数据源使用原来的逻辑
+                # 在线程池中运行 is_available() 检查
+                is_available = await asyncio.wait_for(
+                    asyncio.to_thread(adapter.is_available),
+                    timeout=test_timeout
+                )
+
+                if is_available:
+                    result["available"] = True
+                    result["message"] = "✅ 连接成功"
+                    logger.info(f"✅ {adapter.name} 连通性测试成功")
+                else:
+                    result["available"] = False
+                    result["message"] = "❌ 数据源不可用"
+                    logger.warning(f"⚠️ {adapter.name} 不可用")
+
         except asyncio.TimeoutError:
             result["available"] = False
             result["message"] = f"❌ 连接超时 ({test_timeout}秒)"
             logger.warning(f"⚠️ {adapter.name} 连接超时")
+        except requests.exceptions.Timeout:
+            result["available"] = False
+            result["message"] = f"❌ HTTP 请求超时 ({test_timeout}秒)"
+            logger.warning(f"⚠️ {adapter.name} HTTP 请求超时")
         except Exception as e:
             result["available"] = False
             result["message"] = f"❌ 连接失败: {str(e)}"

@@ -306,6 +306,25 @@ class UnifiedConfigManager:
         )
         data_sources.append(tdx_config)
 
+        # MCP 通达信问小达（行情+问答）
+        mcp_tdx_config = DataSourceConfig(
+            name="MCP_TDX",
+            type=DataSourceType.MCP_TDX,
+            endpoint="https://dashscope.aliyuncs.com/api/v1/mcps/tendency-software/sse",
+            api_key=os.getenv("MCP_API_KEY", ""),
+            enabled=True,
+            priority=8,
+            market_categories=["a_shares"],
+            description="阿里百炼 MCP 通达信问小达：SSE 直连行情快照与问答榜单",
+            config_params={
+                "sse_url": os.getenv("MCP_SSE_URL", "https://dashscope.aliyuncs.com/api/v1/mcps/tendency-software/sse"),
+                "bsp_num": os.getenv("MCP_BSP_NUM", "5"),
+            },
+            provider="Aliyun Bailian MCP",
+            display_name="MCP 通达信问小达",
+        )
+        data_sources.append(mcp_tdx_config)
+
         # AKShare (默认启用)
         akshare_config = DataSourceConfig(
             name="AKShare",
@@ -323,7 +342,7 @@ class UnifiedConfigManager:
                 name="Tushare",
                 type=DataSourceType.TUSHARE,
                 api_key=settings.get("tushare_token"),
-                endpoint="http://api.tushare.pro",
+                endpoint="http://api.tushare.pro",  # 官方 API 使用 HTTP 而非 HTTPS
                 enabled=True,
                 priority=3,
                 description="Tushare专业金融数据接口"
@@ -384,6 +403,25 @@ class UnifiedConfigManager:
         )
         data_sources.append(tdx_config)
 
+        # MCP 通达信问小达（行情+问答）
+        mcp_tdx_config = DataSourceConfig(
+            name="MCP_TDX",
+            type=DataSourceType.MCP_TDX,
+            endpoint="https://dashscope.aliyuncs.com/api/v1/mcps/tendency-software/sse",
+            api_key=os.getenv("MCP_API_KEY", ""),
+            enabled=True,
+            priority=8,
+            market_categories=["a_shares"],
+            description="阿里百炼 MCP 通达信问小达：SSE 直连行情快照与问答榜单",
+            config_params={
+                "sse_url": os.getenv("MCP_SSE_URL", "https://dashscope.aliyuncs.com/api/v1/mcps/tendency-software/sse"),
+                "bsp_num": os.getenv("MCP_BSP_NUM", "5"),
+            },
+            provider="Aliyun Bailian MCP",
+            display_name="MCP 通达信问小达",
+        )
+        data_sources.append(mcp_tdx_config)
+
         # AKShare (默认启用)
         akshare_config = DataSourceConfig(
             name="AKShare",
@@ -401,7 +439,7 @@ class UnifiedConfigManager:
                 name="Tushare",
                 type=DataSourceType.TUSHARE,
                 api_key=settings.get("tushare_token"),
-                endpoint="http://api.tushare.pro",
+                endpoint="http://api.tushare.pro",  # 官方 API 使用 HTTP 而非 HTTPS
                 enabled=True,
                 priority=3,
                 description="Tushare专业金融数据接口"
