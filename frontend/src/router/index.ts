@@ -333,6 +333,24 @@ const routes: RouteRecordRaw[] = [
           title: '定时任务',
           requiresAuth: true
         }
+      },
+      {
+        path: 'agents',
+        name: 'AgentSettings',
+        component: () => import('@/views/Settings/AgentSettings.vue'),
+        meta: {
+          title: '单智能体设置',
+          requiresAuth: true
+        }
+      },
+      {
+        path: 'workflow',
+        name: 'WorkflowEditor',
+        component: () => import('@/views/WorkflowEditor.vue'),
+        meta: {
+          title: '工作流编辑器',
+          requiresAuth: true
+        }
       }
     ]
   },

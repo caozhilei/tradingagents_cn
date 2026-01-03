@@ -18,15 +18,18 @@ logger = get_logger("default")
 class ConfigBasedGraphBuilder:
     """基于配置的图构建器"""
     
-    def __init__(self, graph_setup_instance):
+    def __init__(self, graph_setup_instance=None):
         """
         初始化图构建器
         
         Args:
-            graph_setup_instance: GraphSetup实例
+            graph_setup_instance: GraphSetup实例（可选，如果仅用于验证可为None）
         """
         self.graph_setup = graph_setup_instance
-        self.node_registry = NodeRegistry(graph_setup_instance)
+        if graph_setup_instance:
+            self.node_registry = NodeRegistry(graph_setup_instance)
+        else:
+            self.node_registry = None
     
     def build_graph(self, config: WorkflowConfig):
         """
@@ -252,4 +255,102 @@ class ConfigBasedGraphBuilder:
         func = getattr(conditional_logic, func_name)
         logger.debug(f"📋 获取条件函数: {func_name}")
         return func
+    
+    def validate_config(self, config: WorkflowConfig) -> list:
+        """
+        仅验证配置，不构建图
+        
+        Args:
+            config: 工作流配置对象
+            
+        Returns:
+            错误列表（如果为空则验证通过）
+        """
+        errors = []
+        try:
+            # 1. 解析节点名称
+            node_id_to_name: Dict[str, str] = {}
+            for node_config in config.nodes:
+                try:
+                    node_name = self._generate_node_name(node_config)
+                    node_id_to_name[node_config.id] = node_name
+                except Exception as e:
+                    errors.append(f"节点 {node_config.id} 名称解析失败: {str(e)}")
+            
+            # 2. 边处理：分类与聚合
+            direct_edges = []
+            conditional_edges_map: Dict[str, Dict[str, Any]] = {}
+            
+            for edge_config in config.edges:
+                try:
+                    # 尝试解析源节点和目标节点
+                    try:
+                        source = self._resolve_node_name(edge_config.source, node_id_to_name, is_source=True)
+                    except ValueError as e:
+                        errors.append(f"边 {edge_config.id} 源节点错误: {str(e)}")
+                        continue
+                        
+                    try:
+                        target = self._resolve_node_name(edge_config.target, node_id_to_name, is_source=False)
+                    except ValueError as e:
+                        errors.append(f"边 {edge_config.id} 目标节点错误: {str(e)}")
+                        continue
+                    
+                    if edge_config.type == EdgeType.DIRECT or edge_config.type == EdgeType.LOOP:
+                        direct_edges.append((source, target, edge_config.id))
+                        
+                    elif edge_config.type == EdgeType.CONDITIONAL:
+                        if not edge_config.condition or not edge_config.condition.function:
+                            errors.append(f"条件边 {edge_config.id} 缺少 condition 配置")
+                            continue
+                        
+                        # 聚合条件边逻辑
+                        if source not in conditional_edges_map:
+                            conditional_edges_map[source] = {
+                                "function": edge_config.condition.function,
+                                "mapping": {},
+                                "config_object": edge_config.condition
+                            }
+                        
+                        # 检查函数名是否一致
+                        if conditional_edges_map[source]["function"] != edge_config.condition.function:
+                            errors.append(f"节点 {source} 配置了冲突的条件函数: {conditional_edges_map[source]['function']} vs {edge_config.condition.function}")
+                        
+                        # 合并 mapping
+                        for result_key, target_node_id in edge_config.condition.mapping.items():
+                             try:
+                                 target_name = self._resolve_node_name(target_node_id, node_id_to_name, is_source=False)
+                                 conditional_edges_map[source]["mapping"][result_key] = target_name
+                             except ValueError as e:
+                                 errors.append(f"条件边 {edge_config.id} mapping 错误: {str(e)}")
+                    else:
+                        errors.append(f"边 {edge_config.id} 类型错误: {edge_config.type}")
+                except Exception as e:
+                    errors.append(f"处理边 {edge_config.id} 失败: {str(e)}")
+            
+            # 3. 验证条件函数存在性（仅当有条件边时）
+            if self.graph_setup and conditional_edges_map:
+                conditional_logic = self.graph_setup.conditional_logic
+                for source, edge_info in conditional_edges_map.items():
+                    func_name = edge_info["function"]
+                    if not hasattr(conditional_logic, func_name):
+                        errors.append(f"节点 {source} 的条件函数 {func_name} 不存在")
+            
+            # 4. 验证 START 和 END 节点配置
+            has_start = any(edge.source == "START" for edge in config.edges)
+            has_end = any(edge.target == "END" for edge in config.edges)
+            if not has_start:
+                errors.append("工作流缺少START入口")
+            if not has_end:
+                errors.append("工作流缺少END出口")
+            
+            # 5. 验证节点ID唯一性
+            node_ids = [node.id for node in config.nodes]
+            if len(node_ids) != len(set(node_ids)):
+                errors.append("节点ID不唯一")
+            
+        except Exception as e:
+            errors.append(f"验证配置失败: {str(e)}")
+        
+        return errors
 

@@ -21,16 +21,17 @@ ENV http_proxy=${HTTP_PROXY}
 ENV https_proxy=${HTTPS_PROXY}
 ENV HTTP_PROXY=${HTTP_PROXY}
 ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV no_proxy=${NO_PROXY}
+ENV NO_PROXY=${NO_PROXY}
 
-# 启用Corepack并使用Yarn 1.22.22（项目使用的包管理器）
-RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+# 复制package.json和package-lock.json
+COPY frontend/package.json frontend/package-lock.json ./
 
-# 复制package.json、yarn.lock和.yarnrc（配置国内镜像源）
-COPY frontend/package.json frontend/yarn.lock frontend/.yarnrc ./
+# 清理可能存在的node_modules目录
+RUN rm -rf node_modules
 
-# 安装依赖（使用yarn.lock确保版本一致）
-# 增加网络超时时间到5分钟，适应跨平台构建的网络延迟
-RUN yarn install --frozen-lockfile --production=false --network-timeout 300000
+# 安装所有依赖（包括devDependencies），确保vite被正确安装
+RUN npm install --include=dev --network-timeout=300000
 
 # 复制前端源代码
 COPY frontend/. ./
@@ -41,8 +42,8 @@ COPY frontend/. ./
 COPY assets /app/frontend/public/assets
 COPY docs /app/docs
 
-# 构建生产版本（跳过类型检查以加快构建速度）
-RUN yarn vite build
+# 构建生产版本（使用build:skip-check跳过类型检查，加快构建速度）
+RUN npm run build:skip-check
 
 # 运行阶段：使用Nginx提供静态文件服务
 # 使用腾讯云镜像源加速下载（如果 Docker daemon 已配置镜像加速，会自动使用）
@@ -56,8 +57,29 @@ COPY --from=build /app/frontend/dist .
 # 复制Nginx配置（支持SPA路由）
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 
+# 配置日志管理
+RUN mkdir -p /var/log/nginx && \
+    touch /var/log/nginx/access.log && \
+    touch /var/log/nginx/error.log
+
+# 安全加固
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html && \
+    # 移除默认的nginx配置文件
+    rm -f /etc/nginx/conf.d/default.conf.default && \
+    # 配置nginx用户和组
+    sed -i 's/user nginx;/user nginx nginx;/g' /etc/nginx/nginx.conf && \
+    # 限制worker进程数量
+    sed -i 's/worker_processes auto;/worker_processes 1;/g' /etc/nginx/nginx.conf && \
+    # 配置worker_connections
+    sed -i 's/worker_connections 1024;/worker_connections 512;/g' /etc/nginx/nginx.conf
+
 # 暴露端口80
 EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q -O - http://localhost/health || exit 1
 
 # 启动Nginx
 CMD ["nginx", "-g", "daemon off;"]

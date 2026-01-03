@@ -79,6 +79,13 @@
         <el-menu-item index="/settings/cache">缓存管理</el-menu-item>
       </el-sub-menu>
 
+      <!-- 智能体设置 -->
+      <el-sub-menu index="/settings-agents">
+        <template #title>智能体设置</template>
+        <el-menu-item index="/settings/agents">单智能体设置</el-menu-item>
+        <el-menu-item index="/settings/workflow">工作流编辑器</el-menu-item>
+      </el-sub-menu>
+
       <!-- 系统管理 -->
       <el-sub-menu index="/settings-admin">
         <template #title>系统管理</template>

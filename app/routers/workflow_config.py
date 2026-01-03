@@ -426,31 +426,15 @@ async def validate_workflow(
             # 验证配置格式
             config = WorkflowConfig(**doc)
             
-            # 验证节点ID唯一性
-            node_ids = [node.id for node in config.nodes]
-            if len(node_ids) != len(set(node_ids)):
-                errors.append("节点ID不唯一")
+            # 使用 ConfigBasedGraphBuilder 进行更完整的验证
+            from tradingagents.graph.config_based_builder import ConfigBasedGraphBuilder
             
-            # 验证边的源和目标节点是否存在
-            valid_node_ids = set(node_ids) | {"START", "END"}
-            for edge in config.edges:
-                if edge.source not in valid_node_ids:
-                    errors.append(f"边的源节点不存在: {edge.source}")
-                if edge.target not in valid_node_ids:
-                    errors.append(f"边的目标节点不存在: {edge.target}")
+            # 创建验证器实例（不传入 graph_setup，仅验证配置）
+            validator = ConfigBasedGraphBuilder()
             
-            # 验证至少有一个START边和一个END边
-            has_start = any(edge.source == "START" for edge in config.edges)
-            has_end = any(edge.target == "END" for edge in config.edges)
-            if not has_start:
-                errors.append("工作流缺少START入口")
-            if not has_end:
-                errors.append("工作流缺少END出口")
-            
-            # 验证条件边的condition配置
-            for edge in config.edges:
-                if edge.type.value == "conditional" and not edge.condition:
-                    errors.append(f"条件边 {edge.id} 缺少condition配置")
+            # 执行完整验证
+            validation_errors = validator.validate_config(config)
+            errors.extend(validation_errors)
             
         except Exception as e:
             errors.append(f"配置格式错误: {str(e)}")
