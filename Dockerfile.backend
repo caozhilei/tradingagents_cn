@@ -45,7 +45,12 @@ RUN mkdir -p /app/logs /app/data /app/config && \
         export HTTPS_PROXY=$HTTPS_PROXY; \
     fi && \
     # 更新软件源，允许失败后继续
-    (apt-get update || apt-get update || apt-get update) && \
+    # 使用清华源加速下载
+    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main contrib non-free" > /etc/apt/sources.list && \
+    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm-updates main contrib non-free" >> /etc/apt/sources.list && \
+    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security/ bookworm-security main contrib non-free" >> /etc/apt/sources.list && \
+    # 强制更新软件源，最多尝试5次
+    (apt-get update || apt-get update || apt-get update || apt-get update || apt-get update) && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \

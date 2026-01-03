@@ -38,6 +38,9 @@ services:
       TRADINGAGENTS_MONGODB_URL: mongodb://admin:tradingagents123@mongodb:27017/tradingagents?authSource=admin
       TRADINGAGENTS_REDIS_URL: redis://:tradingagents123@redis:6379
       TRADINGAGENTS_CACHE_TYPE: redis
+      # 明确设置数据库主机名，确保容器间通信
+      REDIS_HOST: redis
+      MONGODB_HOST: mongodb
       # Docker环境标识
       DOCKER_CONTAINER: "true"
       # API配置
@@ -45,11 +48,8 @@ services:
       API_PORT: "8000"
       # CORS配置
       CORS_ORIGINS: "http://localhost:3000,http://localhost:8080,http://localhost:5173"
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # 不使用depends_on，因为MongoDB和Redis是外部服务
+    # 后端服务将直接连接到已运行的MongoDB和Redis容器
     networks:
       - tradingagents-network
     healthcheck:
@@ -84,9 +84,9 @@ services:
       TZ: "Asia/Shanghai"
       # 后端API地址（运行时通过 Nginx 反向代理，不需要设置）
       VITE_API_BASE_URL: ""
+    # 前端服务依赖后端服务
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     networks:
       - tradingagents-network
     healthcheck:
@@ -103,59 +103,12 @@ services:
         max-file: "3"
 
   # MongoDB 数据库服务
-  mongodb:
-    image: mongo:4.4
-    container_name: tradingagents-mongodb
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: tradingagents123
-      MONGO_INITDB_DATABASE: tradingagents
-      TZ: "Asia/Shanghai"
-    volumes:
-      - mongodb_data:/data/db
-      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
-    networks:
-      - tradingagents-network
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "2"
+  # 使用外部已存在的 MongoDB 容器
+  # 注意：不使用 services.mongodb 配置，直接在后端环境变量中指定连接地址
 
   # Redis 缓存服务
-  redis:
-    image: redis:7-alpine
-    container_name: tradingagents-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    environment:
-      TZ: "Asia/Shanghai"
-    command: redis-server --appendonly yes --requirepass tradingagents123
-    volumes:
-      - redis_data:/data
-    networks:
-      - tradingagents-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "50m"
-        max-file: "2"
+  # 使用外部已存在的 Redis 容器
+  # 注意：不使用 services.redis 配置，直接在后端环境变量中指定连接地址
 
   # Redis Commander 管理界面（可选）
   redis-commander:
@@ -168,9 +121,7 @@ services:
       - REDIS_HOSTS=local:redis:6379:0:tradingagents123
     networks:
       - tradingagents-network
-    depends_on:
-      redis:
-        condition: service_healthy
+    # 不使用depends_on，因为Redis是外部服务
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081"]
       interval: 30s
@@ -195,9 +146,7 @@ services:
       ME_CONFIG_BASICAUTH_PASSWORD: tradingagents123
     networks:
       - tradingagents-network
-    depends_on:
-      mongodb:
-        condition: service_healthy
+    # 不使用depends_on，因为MongoDB是外部服务
     profiles:
       - management
 

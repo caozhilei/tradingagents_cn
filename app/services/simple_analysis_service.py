@@ -1559,8 +1559,10 @@ class SimpleAnalysisService:
             logger.info(f"🚀 准备调用 trading_graph.propagate，progress_callback={graph_progress_callback}")
 
             # 执行实际分析，传递进度回调和task_id
+            # 使用股票代码作为fallback，因为validation_result只在execute_analysis_background方法中可用
+            stock_code = request.get_symbol()
             state, decision = trading_graph.propagate(
-                request.stock_code,
+                stock_code,
                 analysis_date,
                 progress_callback=graph_progress_callback,
                 task_id=task_id
