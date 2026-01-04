@@ -280,6 +280,120 @@ db.notifications.createIndex({ "user_id": 1 });
 db.notifications.createIndex({ "is_read": 1 });
 db.notifications.createIndex({ "created_at": -1 });
 
+// 17. 添加默认动态图工作流
+print("\n📋 [MongoDB初始化] 添加默认动态图工作流...");
+
+// 检查默认工作流是否已存在
+var defaultWorkflowExists = db.workflow_configs.findOne({ "name": "默认动态图工作流" });
+if (!defaultWorkflowExists) {
+    db.workflow_configs.insertOne({
+        "name": "默认动态图工作流",
+        "description": "系统默认的动态图工作流配置",
+        "version": "1.0.0",
+        "status": "active",
+        "graph_config": {
+            "nodes": [
+                {
+                    "id": "start",
+                    "type": "start",
+                    "label": "开始",
+                    "position": { "x": 100, "y": 100 },
+                    "properties": {}
+                },
+                {
+                    "id": "data_collection",
+                    "type": "agent",
+                    "label": "数据采集",
+                    "position": { "x": 300, "y": 100 },
+                    "properties": {
+                        "agent_type": "data_collector",
+                        "parameters": {
+                            "sources": ["stock_basic_info", "market_quotes"],
+                            "frequency": "daily"
+                        }
+                    }
+                },
+                {
+                    "id": "analysis",
+                    "type": "agent",
+                    "label": "数据分析",
+                    "position": { "x": 500, "y": 100 },
+                    "properties": {
+                        "agent_type": "analyzer",
+                        "parameters": {
+                            "strategies": ["fundamental", "technical"],
+                            "indicators": ["pe", "pb", "ma"]
+                        }
+                    }
+                },
+                {
+                    "id": "report_generation",
+                    "type": "agent",
+                    "label": "报告生成",
+                    "position": { "x": 700, "y": 100 },
+                    "properties": {
+                        "agent_type": "reporter",
+                        "parameters": {
+                            "format": "markdown",
+                            "include_charts": true
+                        }
+                    }
+                },
+                {
+                    "id": "end",
+                    "type": "end",
+                    "label": "结束",
+                    "position": { "x": 900, "y": 100 },
+                    "properties": {}
+                }
+            ],
+            "edges": [
+                {
+                    "id": "edge1",
+                    "source": "start",
+                    "target": "data_collection",
+                    "label": "开始采集数据"
+                },
+                {
+                    "id": "edge2",
+                    "source": "data_collection",
+                    "target": "analysis",
+                    "label": "数据就绪"
+                },
+                {
+                    "id": "edge3",
+                    "source": "analysis",
+                    "target": "report_generation",
+                    "label": "分析完成"
+                },
+                {
+                    "id": "edge4",
+                    "source": "report_generation",
+                    "target": "end",
+                    "label": "报告完成"
+                }
+            ],
+            "global_settings": {
+                "timeout": 3600,
+                "concurrency": 1,
+                "retry_on_failure": true
+            }
+        },
+        "metadata": {
+            "created_at": new Date(),
+            "updated_at": new Date(),
+            "author": "system",
+            "is_default": true,
+            "tags": ["default", "dynamic_graph", "workflow"]
+        },
+        "is_active": true,
+        "is_system": true
+    });
+    print("✅ [MongoDB初始化] 默认动态图工作流添加成功");
+} else {
+    print("ℹ️ [MongoDB初始化] 默认动态图工作流已存在，跳过添加");
+}
+
 // 完成初始化
 print("\n🎉 [MongoDB初始化] 数据库初始化完成");
 print("📋 数据库信息:");
