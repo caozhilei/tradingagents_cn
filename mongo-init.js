@@ -284,114 +284,432 @@ db.notifications.createIndex({ "created_at": -1 });
 print("\n📋 [MongoDB初始化] 添加默认动态图工作流...");
 
 // 检查默认工作流是否已存在
-var defaultWorkflowExists = db.workflow_configs.findOne({ "name": "默认动态图工作流" });
+var defaultWorkflowExists = db.workflow_configs.findOne({ "name": "默认股票分析流程" });
 if (!defaultWorkflowExists) {
     db.workflow_configs.insertOne({
-        "name": "默认动态图工作流",
-        "description": "系统默认的动态图工作流配置",
+        "name": "默认股票分析流程",
+        "description": "标准的多智能体股票分析工作流",
         "version": "1.0.0",
         "status": "active",
-        "graph_config": {
-            "nodes": [
-                {
-                    "id": "start",
-                    "type": "start",
-                    "label": "开始",
-                    "position": { "x": 100, "y": 100 },
-                    "properties": {}
-                },
-                {
-                    "id": "data_collection",
-                    "type": "agent",
-                    "label": "数据采集",
-                    "position": { "x": 300, "y": 100 },
-                    "properties": {
-                        "agent_type": "data_collector",
-                        "parameters": {
-                            "sources": ["stock_basic_info", "market_quotes"],
-                            "frequency": "daily"
-                        }
-                    }
-                },
-                {
-                    "id": "analysis",
-                    "type": "agent",
-                    "label": "数据分析",
-                    "position": { "x": 500, "y": 100 },
-                    "properties": {
-                        "agent_type": "analyzer",
-                        "parameters": {
-                            "strategies": ["fundamental", "technical"],
-                            "indicators": ["pe", "pb", "ma"]
-                        }
-                    }
-                },
-                {
-                    "id": "report_generation",
-                    "type": "agent",
-                    "label": "报告生成",
-                    "position": { "x": 700, "y": 100 },
-                    "properties": {
-                        "agent_type": "reporter",
-                        "parameters": {
-                            "format": "markdown",
-                            "include_charts": true
-                        }
-                    }
-                },
-                {
-                    "id": "end",
-                    "type": "end",
-                    "label": "结束",
-                    "position": { "x": 900, "y": 100 },
-                    "properties": {}
-                }
-            ],
-            "edges": [
-                {
-                    "id": "edge1",
-                    "source": "start",
-                    "target": "data_collection",
-                    "label": "开始采集数据"
-                },
-                {
-                    "id": "edge2",
-                    "source": "data_collection",
-                    "target": "analysis",
-                    "label": "数据就绪"
-                },
-                {
-                    "id": "edge3",
-                    "source": "analysis",
-                    "target": "report_generation",
-                    "label": "分析完成"
-                },
-                {
-                    "id": "edge4",
-                    "source": "report_generation",
-                    "target": "end",
-                    "label": "报告完成"
-                }
-            ],
-            "global_settings": {
-                "timeout": 3600,
-                "concurrency": 1,
-                "retry_on_failure": true
-            }
+        "parameters": {
+            "selected_analysts": ["market_analyst", "social_media_analyst", "news_analyst", "fundamentals_analyst"],
+            "max_debate_rounds": 1,
+            "max_risk_discuss_rounds": 1
         },
+        "nodes": [
+            {
+                "id": "market_analyst",
+                "type": "analyst",
+                "name": "Market Analyst",
+                "category": "analyst",
+                "config": {
+                    "agent_type": "market_analyst",
+                    "llm_type": "quick_thinking",
+                    "max_tool_calls": 3
+                },
+                "position": { "x": 100, "y": 100 }
+            },
+            {
+                "id": "tools_market",
+                "type": "tool_node",
+                "name": "tools_market",
+                "category": "tool",
+                "config": {
+                    "agent_type": "market_analyst"
+                },
+                "position": { "x": 100, "y": 250 }
+            },
+            {
+                "id": "msg_clear_market",
+                "type": "message_clear",
+                "name": "Msg Clear Market",
+                "category": "utility",
+                "config": {
+                    "agent_type": "market_analyst"
+                },
+                "position": { "x": 100, "y": 400 }
+            },
+            {
+                "id": "social_analyst",
+                "type": "analyst",
+                "name": "Social Media Analyst",
+                "category": "analyst",
+                "config": {
+                    "agent_type": "social_media_analyst",
+                    "llm_type": "quick_thinking",
+                    "max_tool_calls": 3
+                },
+                "position": { "x": 300, "y": 100 }
+            },
+            {
+                "id": "tools_social",
+                "type": "tool_node",
+                "name": "tools_social",
+                "category": "tool",
+                "config": {
+                    "agent_type": "social_media_analyst"
+                },
+                "position": { "x": 300, "y": 250 }
+            },
+            {
+                "id": "msg_clear_social",
+                "type": "message_clear",
+                "name": "Msg Clear Social",
+                "category": "utility",
+                "config": {
+                    "agent_type": "social_media_analyst"
+                },
+                "position": { "x": 300, "y": 400 }
+            },
+            {
+                "id": "news_analyst",
+                "type": "analyst",
+                "name": "News Analyst",
+                "category": "analyst",
+                "config": {
+                    "agent_type": "news_analyst",
+                    "llm_type": "quick_thinking",
+                    "max_tool_calls": 3
+                },
+                "position": { "x": 500, "y": 100 }
+            },
+            {
+                "id": "tools_news",
+                "type": "tool_node",
+                "name": "tools_news",
+                "category": "tool",
+                "config": {
+                    "agent_type": "news_analyst"
+                },
+                "position": { "x": 500, "y": 250 }
+            },
+            {
+                "id": "msg_clear_news",
+                "type": "message_clear",
+                "name": "Msg Clear News",
+                "category": "utility",
+                "config": {
+                    "agent_type": "news_analyst"
+                },
+                "position": { "x": 500, "y": 400 }
+            },
+            {
+                "id": "fundamentals_analyst",
+                "type": "analyst",
+                "name": "Fundamentals Analyst",
+                "category": "analyst",
+                "config": {
+                    "agent_type": "fundamentals_analyst",
+                    "llm_type": "quick_thinking",
+                    "max_tool_calls": 1
+                },
+                "position": { "x": 700, "y": 100 }
+            },
+            {
+                "id": "tools_fundamentals",
+                "type": "tool_node",
+                "name": "tools_fundamentals",
+                "category": "tool",
+                "config": {
+                    "agent_type": "fundamentals_analyst"
+                },
+                "position": { "x": 700, "y": 250 }
+            },
+            {
+                "id": "msg_clear_fundamentals",
+                "type": "message_clear",
+                "name": "Msg Clear Fundamentals",
+                "category": "utility",
+                "config": {
+                    "agent_type": "fundamentals_analyst"
+                },
+                "position": { "x": 700, "y": 400 }
+            },
+            {
+                "id": "bull_researcher",
+                "type": "researcher",
+                "name": "Bull Researcher",
+                "category": "researcher",
+                "config": {
+                    "agent_type": "bull_researcher"
+                },
+                "position": { "x": 100, "y": 550 }
+            },
+            {
+                "id": "bear_researcher",
+                "type": "researcher",
+                "name": "Bear Researcher",
+                "category": "researcher",
+                "config": {
+                    "agent_type": "bear_researcher"
+                },
+                "position": { "x": 300, "y": 550 }
+            },
+            {
+                "id": "research_manager",
+                "type": "manager",
+                "name": "Research Manager",
+                "category": "manager",
+                "config": {
+                    "agent_type": "research_manager"
+                },
+                "position": { "x": 200, "y": 700 }
+            },
+            {
+                "id": "trader",
+                "type": "trader",
+                "name": "Trader",
+                "category": "trader",
+                "config": {
+                    "agent_type": "trader"
+                },
+                "position": { "x": 200, "y": 850 }
+            },
+            {
+                "id": "risky_analyst",
+                "type": "risk_analyst",
+                "name": "Risky Analyst",
+                "category": "risk_analyst",
+                "config": {
+                    "agent_type": "aggressive_debator"
+                },
+                "position": { "x": 100, "y": 1000 }
+            },
+            {
+                "id": "safe_analyst",
+                "type": "risk_analyst",
+                "name": "Safe Analyst",
+                "category": "risk_analyst",
+                "config": {
+                    "agent_type": "conservative_debator"
+                },
+                "position": { "x": 300, "y": 1000 }
+            },
+            {
+                "id": "neutral_analyst",
+                "type": "risk_analyst",
+                "name": "Neutral Analyst",
+                "category": "risk_analyst",
+                "config": {
+                    "agent_type": "neutral_debator"
+                },
+                "position": { "x": 500, "y": 1000 }
+            },
+            {
+                "id": "risk_judge",
+                "type": "manager",
+                "name": "Risk Judge",
+                "category": "manager",
+                "config": {
+                    "agent_type": "risk_manager"
+                },
+                "position": { "x": 200, "y": 1150 }
+            }
+        ],
+        "edges": [
+            {
+                "id": "start_to_market_analyst",
+                "source": "START",
+                "target": "market_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "market_analyst_to_tools_market_conditional",
+                "source": "market_analyst",
+                "target": "tools_market",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_market_analyst",
+                    "mapping": {
+                        "tools_market": "tools_market",
+                        "Msg Clear Market": "msg_clear_market"
+                    }
+                }
+            },
+            {
+                "id": "tools_market_to_market_analyst",
+                "source": "tools_market",
+                "target": "market_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "msg_clear_market_to_social_analyst",
+                "source": "msg_clear_market",
+                "target": "social_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "social_analyst_to_tools_social_conditional",
+                "source": "social_analyst",
+                "target": "tools_social",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_social_media_analyst",
+                    "mapping": {
+                        "tools_social": "tools_social",
+                        "Msg Clear Social": "msg_clear_social"
+                    }
+                }
+            },
+            {
+                "id": "tools_social_to_social_analyst",
+                "source": "tools_social",
+                "target": "social_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "msg_clear_social_to_news_analyst",
+                "source": "msg_clear_social",
+                "target": "news_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "news_analyst_to_tools_news_conditional",
+                "source": "news_analyst",
+                "target": "tools_news",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_news_analyst",
+                    "mapping": {
+                        "tools_news": "tools_news",
+                        "Msg Clear News": "msg_clear_news"
+                    }
+                }
+            },
+            {
+                "id": "tools_news_to_news_analyst",
+                "source": "tools_news",
+                "target": "news_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "msg_clear_news_to_fundamentals_analyst",
+                "source": "msg_clear_news",
+                "target": "fundamentals_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "fundamentals_analyst_to_tools_fundamentals_conditional",
+                "source": "fundamentals_analyst",
+                "target": "tools_fundamentals",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_fundamentals_analyst",
+                    "mapping": {
+                        "tools_fundamentals": "tools_fundamentals",
+                        "Msg Clear Fundamentals": "msg_clear_fundamentals"
+                    }
+                }
+            },
+            {
+                "id": "tools_fundamentals_to_fundamentals_analyst",
+                "source": "tools_fundamentals",
+                "target": "fundamentals_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "msg_clear_fundamentals_to_bull_researcher",
+                "source": "msg_clear_fundamentals",
+                "target": "bull_researcher",
+                "type": "direct"
+            },
+            {
+                "id": "bull_to_bear_conditional",
+                "source": "bull_researcher",
+                "target": "bear_researcher",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_debate",
+                    "mapping": {
+                        "Bear Researcher": "bear_researcher",
+                        "Research Manager": "research_manager"
+                    }
+                }
+            },
+            {
+                "id": "bear_to_bull_conditional",
+                "source": "bear_researcher",
+                "target": "bull_researcher",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_debate",
+                    "mapping": {
+                        "Bull Researcher": "bull_researcher",
+                        "Research Manager": "research_manager"
+                    }
+                }
+            },
+            {
+                "id": "research_manager_to_trader",
+                "source": "research_manager",
+                "target": "trader",
+                "type": "direct"
+            },
+            {
+                "id": "trader_to_risky_analyst",
+                "source": "trader",
+                "target": "risky_analyst",
+                "type": "direct"
+            },
+            {
+                "id": "risky_to_safe_conditional",
+                "source": "risky_analyst",
+                "target": "safe_analyst",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_risk_analysis",
+                    "mapping": {
+                        "Safe Analyst": "safe_analyst",
+                        "Risk Judge": "risk_judge"
+                    }
+                }
+            },
+            {
+                "id": "safe_to_neutral_conditional",
+                "source": "safe_analyst",
+                "target": "neutral_analyst",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_risk_analysis",
+                    "mapping": {
+                        "Neutral Analyst": "neutral_analyst",
+                        "Risk Judge": "risk_judge"
+                    }
+                }
+            },
+            {
+                "id": "neutral_to_risky_conditional",
+                "source": "neutral_analyst",
+                "target": "risky_analyst",
+                "type": "conditional",
+                "condition": {
+                    "function": "should_continue_risk_analysis",
+                    "mapping": {
+                        "Risky Analyst": "risky_analyst",
+                        "Risk Judge": "risk_judge"
+                    }
+                }
+            },
+            {
+                "id": "risk_judge_to_end",
+                "source": "risk_judge",
+                "target": "END",
+                "type": "direct"
+            }
+        ],
         "metadata": {
             "created_at": new Date(),
             "updated_at": new Date(),
             "author": "system",
             "is_default": true,
-            "tags": ["default", "dynamic_graph", "workflow"]
+            "tags": ["default", "stock_analysis", "workflow"]
         },
         "is_active": true,
         "is_system": true
     });
-    print("✅ [MongoDB初始化] 默认动态图工作流添加成功");
+    print("✅ [MongoDB初始化] 默认股票分析流程添加成功");
 } else {
-    print("ℹ️ [MongoDB初始化] 默认动态图工作流已存在，跳过添加");
+    print("ℹ️ [MongoDB初始化] 默认股票分析流程已存在，跳过添加");
 }
 
 // 完成初始化
